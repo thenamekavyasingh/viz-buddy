@@ -199,4 +199,5 @@
   @keyframes pulse-glow {
     0%, 100% { box-shadow: var(--shadow-glass); }
     50% { box-shadow: var(--shadow-glow); }
+  }
 }
