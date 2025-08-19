@@ -45,7 +45,7 @@
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: rgba(255, 255, 255, 0.18);
   }
 
   body {
@@ -199,15 +199,4 @@
   @keyframes pulse-glow {
     0%, 100% { box-shadow: var(--shadow-glass); }
     50% { box-shadow: var(--shadow-glow); }
-  }
-}
-
-@layer base {
-  * {
-    @apply border-border;
-  }
-
-  body {
-    @apply bg-background text-foreground;
-  }
 }
