@@ -1,0 +1,621 @@
+import { useState, useRef, useCallback, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useNavigate } from "react-router-dom";
+import { Home, Play, Square, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
+
+interface Node {
+  id: string;
+  x: number;
+  y: number;
+  visited: boolean;
+  current: boolean;
+  inQueue: boolean;
+  distance?: number;
+}
+
+interface Edge {
+  from: string;
+  to: string;
+  weight?: number;
+  highlighted: boolean;
+}
+
+interface Graph {
+  [key: string]: { [key: string]: number };
+}
+
+type Algorithm = 'bfs' | 'dfs' | 'dijkstra';
+type InputMode = 'adjacency-list' | 'adjacency-matrix' | 'random';
+
+const GraphVisualizer = () => {
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const [graph, setGraph] = useState<Graph>({});
+  const [algorithm, setAlgorithm] = useState<Algorithm>('bfs');
+  const [inputMode, setInputMode] = useState<InputMode>('adjacency-list');
+  const [inputText, setInputText] = useState('');
+  const [isRunning, setIsRunning] = useState(false);
+  const [startNode, setStartNode] = useState('');
+  const [isDirected, setIsDirected] = useState(false);
+  const [isWeighted, setIsWeighted] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationRef = useRef<NodeJS.Timeout[]>([]);
+  const navigate = useNavigate();
+
+  const sleep = (ms: number) => {
+    return new Promise(resolve => {
+      const timeout = setTimeout(resolve, ms);
+      animationRef.current.push(timeout);
+    });
+  };
+
+  const stopVisualization = () => {
+    animationRef.current.forEach(timeout => clearTimeout(timeout));
+    animationRef.current = [];
+    setIsRunning(false);
+    // Reset all visual states
+    setNodes(prev => prev.map(node => ({ ...node, visited: false, current: false, inQueue: false })));
+    setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
+  };
+
+  const parseAdjacencyList = (input: string): Graph => {
+    const lines = input.trim().split('\n');
+    const graph: Graph = {};
+    
+    lines.forEach(line => {
+      const parts = line.trim().split(':');
+      if (parts.length !== 2) throw new Error('Invalid format');
+      
+      const node = parts[0].trim();
+      const neighbors = parts[1].trim();
+      
+      if (!graph[node]) graph[node] = {};
+      
+      if (neighbors) {
+        const neighborList = neighbors.split(',');
+        neighborList.forEach(neighbor => {
+          const trimmed = neighbor.trim();
+          if (isWeighted && trimmed.includes('(')) {
+            const match = trimmed.match(/(\w+)\((\d+)\)/);
+            if (match) {
+              graph[node][match[1]] = parseInt(match[2]);
+            }
+          } else {
+            graph[node][trimmed] = 1;
+          }
+        });
+      }
+    });
+    
+    return graph;
+  };
+
+  const parseAdjacencyMatrix = (input: string): Graph => {
+    const lines = input.trim().split('\n');
+    const nodeLabels = lines[0].split(',').map(s => s.trim());
+    const graph: Graph = {};
+    
+    // Initialize graph
+    nodeLabels.forEach(label => {
+      graph[label] = {};
+    });
+    
+    for (let i = 1; i < lines.length; i++) {
+      const row = lines[i].split(',').map(s => parseInt(s.trim()));
+      const fromNode = nodeLabels[i - 1];
+      
+      row.forEach((weight, j) => {
+        if (weight > 0) {
+          const toNode = nodeLabels[j];
+          graph[fromNode][toNode] = isWeighted ? weight : 1;
+        }
+      });
+    }
+    
+    return graph;
+  };
+
+  const generateRandomGraph = (): Graph => {
+    const nodeCount = 6;
+    const nodeLabels = Array.from({ length: nodeCount }, (_, i) => String.fromCharCode(65 + i));
+    const graph: Graph = {};
+    
+    // Initialize nodes
+    nodeLabels.forEach(label => {
+      graph[label] = {};
+    });
+    
+    // Add random edges
+    nodeLabels.forEach(from => {
+      const edgeCount = Math.floor(Math.random() * 3) + 1;
+      const availableNodes = nodeLabels.filter(n => n !== from);
+      
+      for (let i = 0; i < edgeCount && availableNodes.length > 0; i++) {
+        const randomIndex = Math.floor(Math.random() * availableNodes.length);
+        const to = availableNodes.splice(randomIndex, 1)[0];
+        const weight = isWeighted ? Math.floor(Math.random() * 10) + 1 : 1;
+        graph[from][to] = weight;
+        
+        if (!isDirected) {
+          graph[to][from] = weight;
+        }
+      }
+    });
+    
+    return graph;
+  };
+
+  const createVisualization = (graphData: Graph) => {
+    const nodeIds = Object.keys(graphData);
+    const centerX = 400;
+    const centerY = 300;
+    const radius = 200;
+    
+    // Create nodes in circular layout
+    const newNodes: Node[] = nodeIds.map((id, index) => {
+      const angle = (index * 2 * Math.PI) / nodeIds.length;
+      return {
+        id,
+        x: centerX + radius * Math.cos(angle),
+        y: centerY + radius * Math.sin(angle),
+        visited: false,
+        current: false,
+        inQueue: false,
+        distance: algorithm === 'dijkstra' ? (id === startNode ? 0 : Infinity) : undefined
+      };
+    });
+    
+    // Create edges
+    const newEdges: Edge[] = [];
+    Object.entries(graphData).forEach(([from, neighbors]) => {
+      Object.entries(neighbors).forEach(([to, weight]) => {
+        newEdges.push({
+          from,
+          to,
+          weight: isWeighted ? weight : undefined,
+          highlighted: false
+        });
+      });
+    });
+    
+    setNodes(newNodes);
+    setEdges(newEdges);
+  };
+
+  const generateGraph = () => {
+    try {
+      let graphData: Graph;
+      
+      switch (inputMode) {
+        case 'adjacency-list':
+          graphData = parseAdjacencyList(inputText);
+          break;
+        case 'adjacency-matrix':
+          graphData = parseAdjacencyMatrix(inputText);
+          break;
+        case 'random':
+          graphData = generateRandomGraph();
+          break;
+        default:
+          throw new Error('Invalid input mode');
+      }
+      
+      setGraph(graphData);
+      createVisualization(graphData);
+      
+      if (Object.keys(graphData).length > 0) {
+        setStartNode(Object.keys(graphData)[0]);
+      }
+      
+      toast.success("Graph generated successfully!");
+    } catch (error) {
+      toast.error("Failed to parse graph. Please check your input format.");
+      console.error(error);
+    }
+  };
+
+  // BFS Algorithm
+  const bfs = async (startNodeId: string) => {
+    const queue: string[] = [startNodeId];
+    const visited = new Set<string>();
+    
+    while (queue.length > 0 && isRunning) {
+      const current = queue.shift()!;
+      
+      if (visited.has(current)) continue;
+      
+      // Mark current node
+      setNodes(prev => prev.map(node => ({
+        ...node,
+        current: node.id === current,
+        visited: visited.has(node.id)
+      })));
+      
+      await sleep(1000);
+      
+      visited.add(current);
+      
+      // Add neighbors to queue
+      if (graph[current]) {
+        for (const neighbor of Object.keys(graph[current])) {
+          if (!visited.has(neighbor)) {
+            queue.push(neighbor);
+            
+            // Highlight edge
+            setEdges(prev => prev.map(edge => ({
+              ...edge,
+              highlighted: (edge.from === current && edge.to === neighbor) ||
+                          (!isDirected && edge.from === neighbor && edge.to === current)
+            })));
+            
+            await sleep(500);
+          }
+        }
+      }
+      
+      // Mark node as visited
+      setNodes(prev => prev.map(node => ({
+        ...node,
+        visited: visited.has(node.id),
+        current: false
+      })));
+    }
+  };
+
+  // DFS Algorithm
+  const dfs = async (current: string, visited: Set<string>) => {
+    if (!isRunning || visited.has(current)) return;
+    
+    visited.add(current);
+    
+    // Mark current node
+    setNodes(prev => prev.map(node => ({
+      ...node,
+      current: node.id === current,
+      visited: visited.has(node.id)
+    })));
+    
+    await sleep(1000);
+    
+    // Visit neighbors
+    if (graph[current]) {
+      for (const neighbor of Object.keys(graph[current])) {
+        if (!visited.has(neighbor)) {
+          // Highlight edge
+          setEdges(prev => prev.map(edge => ({
+            ...edge,
+            highlighted: (edge.from === current && edge.to === neighbor) ||
+                        (!isDirected && edge.from === neighbor && edge.to === current)
+          })));
+          
+          await sleep(500);
+          await dfs(neighbor, visited);
+        }
+      }
+    }
+    
+    // Unmark current
+    setNodes(prev => prev.map(node => ({
+      ...node,
+      current: false
+    })));
+  };
+
+  const startVisualization = async () => {
+    if (!startNode || Object.keys(graph).length === 0) {
+      toast.error("Please generate a graph and select a start node first!");
+      return;
+    }
+    
+    setIsRunning(true);
+    
+    // Reset visualization state
+    setNodes(prev => prev.map(node => ({ 
+      ...node, 
+      visited: false, 
+      current: false, 
+      inQueue: false,
+      distance: algorithm === 'dijkstra' ? (node.id === startNode ? 0 : Infinity) : undefined
+    })));
+    setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
+    
+    try {
+      switch (algorithm) {
+        case 'bfs':
+          await bfs(startNode);
+          break;
+        case 'dfs':
+          await dfs(startNode, new Set());
+          break;
+        case 'dijkstra':
+          toast.info("Dijkstra's algorithm - Coming soon!");
+          break;
+      }
+      
+      if (isRunning) {
+        toast.success("Algorithm visualization completed!");
+      }
+    } catch (error) {
+      console.error("Visualization error:", error);
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  // Canvas drawing
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw edges
+    edges.forEach(edge => {
+      const fromNode = nodes.find(n => n.id === edge.from);
+      const toNode = nodes.find(n => n.id === edge.to);
+      
+      if (fromNode && toNode) {
+        ctx.strokeStyle = edge.highlighted ? '#ec4899' : '#64748b';
+        ctx.lineWidth = edge.highlighted ? 3 : 2;
+        ctx.beginPath();
+        ctx.moveTo(fromNode.x, fromNode.y);
+        ctx.lineTo(toNode.x, toNode.y);
+        ctx.stroke();
+        
+        // Draw arrow for directed graphs
+        if (isDirected) {
+          const angle = Math.atan2(toNode.y - fromNode.y, toNode.x - fromNode.x);
+          const arrowLength = 15;
+          const arrowX = toNode.x - 25 * Math.cos(angle);
+          const arrowY = toNode.y - 25 * Math.sin(angle);
+          
+          ctx.beginPath();
+          ctx.moveTo(arrowX, arrowY);
+          ctx.lineTo(arrowX - arrowLength * Math.cos(angle - Math.PI / 6), arrowY - arrowLength * Math.sin(angle - Math.PI / 6));
+          ctx.moveTo(arrowX, arrowY);
+          ctx.lineTo(arrowX - arrowLength * Math.cos(angle + Math.PI / 6), arrowY - arrowLength * Math.sin(angle + Math.PI / 6));
+          ctx.stroke();
+        }
+        
+        // Draw weight
+        if (isWeighted && edge.weight) {
+          const midX = (fromNode.x + toNode.x) / 2;
+          const midY = (fromNode.y + toNode.y) / 2;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(midX - 10, midY - 10, 20, 20);
+          ctx.fillStyle = '#000000';
+          ctx.font = '12px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText(edge.weight.toString(), midX, midY + 4);
+        }
+      }
+    });
+    
+    // Draw nodes
+    nodes.forEach(node => {
+      let fillColor = '#3b82f6'; // default blue
+      if (node.current) fillColor = '#ec4899'; // pink for current
+      else if (node.visited) fillColor = '#10b981'; // green for visited
+      else if (node.inQueue) fillColor = '#f59e0b'; // yellow for in queue
+      
+      ctx.fillStyle = fillColor;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, 25, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      // Node border
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Node label
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 16px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(node.id, node.x, node.y + 5);
+      
+      // Distance for Dijkstra
+      if (algorithm === 'dijkstra' && node.distance !== undefined && node.distance !== Infinity) {
+        ctx.fillStyle = '#000000';
+        ctx.font = '10px Arial';
+        ctx.fillText(`d:${node.distance}`, node.x, node.y - 35);
+      }
+    });
+  }, [nodes, edges, isDirected, isWeighted, algorithm]);
+
+  const exampleInputs = {
+    'adjacency-list': 'A: B,C\nB: A,D,E\nC: A,F\nD: B\nE: B,F\nF: C,E',
+    'adjacency-matrix': 'A,B,C,D\n0,1,1,0\n1,0,1,1\n1,1,0,1\n0,1,1,0',
+    'random': 'Click "Generate Random" to create a random graph'
+  };
+
+  return (
+    <div className="min-h-screen relative overflow-hidden">
+      <div className="bg-animated"></div>
+      
+      <div className="relative z-10 min-h-screen p-4">
+        <div className="glass-container max-w-7xl mx-auto p-6 animate-slide-in">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="title-section">🕸️ Graph Visualizer</h1>
+            <Button onClick={() => navigate('/')} className="btn-glass">
+              <Home className="w-4 h-4 mr-2" />
+              Home
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Visualization Canvas */}
+            <div className="lg:col-span-2">
+              <div className="glass-container p-6 mb-6">
+                <canvas
+                  ref={canvasRef}
+                  width={800}
+                  height={600}
+                  className="w-full h-auto bg-gray-900 rounded-lg"
+                />
+              </div>
+              
+              {/* Control Buttons */}
+              <div className="flex gap-2 justify-center">
+                <Button 
+                  onClick={startVisualization} 
+                  disabled={isRunning || nodes.length === 0}
+                  className="btn-glass btn-primary"
+                >
+                  <Play className="w-4 h-4 mr-2" />
+                  Start {algorithm.toUpperCase()}
+                </Button>
+                
+                <Button 
+                  onClick={stopVisualization} 
+                  disabled={!isRunning}
+                  className="btn-glass"
+                  variant="destructive"
+                >
+                  <Square className="w-4 h-4 mr-2" />
+                  Stop
+                </Button>
+              </div>
+            </div>
+
+            {/* Control Panel */}
+            <div className="space-y-4">
+              {/* Settings */}
+              <div className="glass-container p-6">
+                <h3 className="text-lg font-semibold mb-4">Settings</h3>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Algorithm</label>
+                    <Select value={algorithm} onValueChange={(value: Algorithm) => setAlgorithm(value)} disabled={isRunning}>
+                      <SelectTrigger className="input-glass">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="bfs">Breadth-First Search</SelectItem>
+                        <SelectItem value="dfs">Depth-First Search</SelectItem>
+                        <SelectItem value="dijkstra">Dijkstra (Coming Soon)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Input Mode</label>
+                    <Select value={inputMode} onValueChange={(value: InputMode) => setInputMode(value)} disabled={isRunning}>
+                      <SelectTrigger className="input-glass">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="adjacency-list">Adjacency List</SelectItem>
+                        <SelectItem value="adjacency-matrix">Adjacency Matrix</SelectItem>
+                        <SelectItem value="random">Random Graph</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isDirected}
+                        onChange={(e) => setIsDirected(e.target.checked)}
+                        disabled={isRunning}
+                        className="rounded"
+                      />
+                      <span className="text-sm">Directed</span>
+                    </label>
+                    
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isWeighted}
+                        onChange={(e) => setIsWeighted(e.target.checked)}
+                        disabled={isRunning}
+                        className="rounded"
+                      />
+                      <span className="text-sm">Weighted</span>
+                    </label>
+                  </div>
+
+                  {nodes.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Start Node</label>
+                      <Select value={startNode} onValueChange={setStartNode} disabled={isRunning}>
+                        <SelectTrigger className="input-glass">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.keys(graph).map(nodeId => (
+                            <SelectItem key={nodeId} value={nodeId}>{nodeId}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Input */}
+              <div className="glass-container p-6">
+                <h3 className="text-lg font-semibold mb-4">Graph Input</h3>
+                
+                {inputMode !== 'random' && (
+                  <div className="mb-4">
+                    <Textarea
+                      placeholder={exampleInputs[inputMode]}
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      disabled={isRunning}
+                      className="input-glass min-h-[120px] font-mono text-sm"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Button 
+                    onClick={generateGraph} 
+                    disabled={isRunning}
+                    className="btn-glass w-full"
+                  >
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    {inputMode === 'random' ? 'Generate Random Graph' : 'Generate Graph'}
+                  </Button>
+                </div>
+
+                {/* Legend */}
+                <div className="mt-6 p-4 bg-glass-bg rounded-lg border border-glass-border">
+                  <h4 className="text-sm font-medium mb-2">Legend:</h4>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-primary-blue rounded-full"></div>
+                      <span>Unvisited</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-accent-pink rounded-full"></div>
+                      <span>Current</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-green-500 rounded-full"></div>
+                      <span>Visited</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default GraphVisualizer;
