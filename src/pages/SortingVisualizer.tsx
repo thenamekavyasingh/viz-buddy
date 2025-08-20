@@ -221,8 +221,14 @@ const SortingVisualizer = () => {
 
   // Initialize array on mount
   useEffect(() => {
-    generateRandomArray();
-  }, [generateRandomArray]);
+    const newArray = Array.from({ length: 20 }, () => ({
+      value: Math.floor(Math.random() * 290) + 10,
+      isCompared: false,
+      isSwapped: false,
+      isSorted: false
+    }));
+    setArray(newArray);
+  }, []);
 
   const getBarColor = (element: ArrayElement) => {
     if (element.isSorted) return 'bg-green-400';
