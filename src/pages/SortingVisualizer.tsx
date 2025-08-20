@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,6 +24,7 @@ const SortingVisualizer = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [customInput, setCustomInput] = useState('');
   const animationRef = useRef<NodeJS.Timeout[]>([]);
+  const isRunningRef = useRef(false);
   const navigate = useNavigate();
 
   const generateRandomArray = useCallback(() => {
@@ -68,6 +69,7 @@ const SortingVisualizer = () => {
   const stopSorting = () => {
     animationRef.current.forEach(timeout => clearTimeout(timeout));
     animationRef.current = [];
+    isRunningRef.current = false;
     setIsRunning(false);
     setArray(prev => prev.map(el => ({ ...el, isCompared: false, isSwapped: false })));
   };
@@ -81,7 +83,7 @@ const SortingVisualizer = () => {
     const n = arr.length;
     for (let i = 0; i < n - 1; i++) {
       for (let j = 0; j < n - i - 1; j++) {
-        if (!isRunning) return;
+        if (!isRunningRef.current) return;
         
         arr[j].isCompared = true;
         arr[j + 1].isCompared = true;
@@ -115,7 +117,7 @@ const SortingVisualizer = () => {
       arr[minIdx].isCompared = true;
       
       for (let j = i + 1; j < n; j++) {
-        if (!isRunning) return;
+        if (!isRunningRef.current) return;
         
         arr[j].isCompared = true;
         updateArray(arr);
@@ -151,7 +153,7 @@ const SortingVisualizer = () => {
 
   const insertionSort = async (arr: ArrayElement[]) => {
     for (let i = 1; i < arr.length; i++) {
-      if (!isRunning) return;
+      if (!isRunningRef.current) return;
       
       const key = arr[i];
       let j = i - 1;
@@ -161,7 +163,7 @@ const SortingVisualizer = () => {
       await sleep(1100 - speed[0] * 100);
       
       while (j >= 0 && arr[j].value > key.value) {
-        if (!isRunning) return;
+        if (!isRunningRef.current) return;
         
         arr[j].isCompared = true;
         arr[j + 1] = arr[j];
@@ -191,6 +193,7 @@ const SortingVisualizer = () => {
     }
     
     setIsRunning(true);
+    isRunningRef.current = true;
     const arrayCopy = [...array];
     
     try {
@@ -211,14 +214,15 @@ const SortingVisualizer = () => {
     } catch (error) {
       console.error("Sorting error:", error);
     } finally {
+      isRunningRef.current = false;
       setIsRunning(false);
     }
   };
 
   // Initialize array on mount
-  useState(() => {
+  useEffect(() => {
     generateRandomArray();
-  });
+  }, [generateRandomArray]);
 
   const getBarColor = (element: ArrayElement) => {
     if (element.isSorted) return 'bg-green-400';
