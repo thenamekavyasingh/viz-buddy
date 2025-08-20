@@ -219,16 +219,17 @@ const SortingVisualizer = () => {
     }
   };
 
-  // Initialize array on mount
+  // Initialize array on mount and regenerate when size changes
   useEffect(() => {
-    const newArray = Array.from({ length: 20 }, () => ({
-      value: Math.floor(Math.random() * 290) + 10,
-      isCompared: false,
-      isSwapped: false,
-      isSorted: false
-    }));
-    setArray(newArray);
-  }, []);
+    generateRandomArray();
+  }, [generateRandomArray]);
+
+  // Regenerate array when array size changes
+  useEffect(() => {
+    if (!isRunning) {
+      generateRandomArray();
+    }
+  }, [arraySize, generateRandomArray, isRunning]);
 
   const getBarColor = (element: ArrayElement) => {
     if (element.isSorted) return 'bg-green-400';
