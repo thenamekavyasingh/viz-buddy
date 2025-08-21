@@ -151,7 +151,7 @@ const SortingVisualizer = () => {
     updateArray(arr);
   };
 
-  const insertionSort = async (arr: ArrayElement[]) => {
+const insertionSort = async (arr: ArrayElement[]) => {
     for (let i = 1; i < arr.length; i++) {
       if (!isRunningRef.current) return;
       
@@ -186,6 +186,134 @@ const SortingVisualizer = () => {
     updateArray(arr);
   };
 
+  const mergeSort = async (arr: ArrayElement[], left: number = 0, right: number = arr.length - 1) => {
+    if (left < right) {
+      const mid = Math.floor((left + right) / 2);
+      
+      await mergeSort(arr, left, mid);
+      await mergeSort(arr, mid + 1, right);
+      await merge(arr, left, mid, right);
+    }
+  };
+
+  const merge = async (arr: ArrayElement[], left: number, mid: number, right: number) => {
+    if (!isRunningRef.current) return;
+    
+    const leftArr = arr.slice(left, mid + 1);
+    const rightArr = arr.slice(mid + 1, right + 1);
+    
+    let i = 0, j = 0, k = left;
+    
+    while (i < leftArr.length && j < rightArr.length) {
+      if (!isRunningRef.current) return;
+      
+      // Highlight elements being compared
+      arr[k].isCompared = true;
+      updateArray(arr);
+      await sleep(1100 - speed[0] * 100);
+      
+      if (leftArr[i].value <= rightArr[j].value) {
+        arr[k] = { ...leftArr[i], isSwapped: true };
+        i++;
+      } else {
+        arr[k] = { ...rightArr[j], isSwapped: true };
+        j++;
+      }
+      
+      updateArray(arr);
+      await sleep(1100 - speed[0] * 100);
+      
+      arr[k].isCompared = false;
+      arr[k].isSwapped = false;
+      k++;
+    }
+    
+    while (i < leftArr.length) {
+      if (!isRunningRef.current) return;
+      arr[k] = { ...leftArr[i], isSwapped: true };
+      updateArray(arr);
+      await sleep(1100 - speed[0] * 100);
+      arr[k].isSwapped = false;
+      i++;
+      k++;
+    }
+    
+    while (j < rightArr.length) {
+      if (!isRunningRef.current) return;
+      arr[k] = { ...rightArr[j], isSwapped: true };
+      updateArray(arr);
+      await sleep(1100 - speed[0] * 100);
+      arr[k].isSwapped = false;
+      j++;
+      k++;
+    }
+    
+    // Mark sorted section
+    if (left === 0 && right === arr.length - 1) {
+      arr.forEach(el => el.isSorted = true);
+      updateArray(arr);
+    }
+  };
+
+  const quickSort = async (arr: ArrayElement[], low: number = 0, high: number = arr.length - 1) => {
+    if (low < high) {
+      const pivotIndex = await partition(arr, low, high);
+      await quickSort(arr, low, pivotIndex - 1);
+      await quickSort(arr, pivotIndex + 1, high);
+    }
+    
+    // Mark all as sorted when done
+    if (low === 0 && high === arr.length - 1) {
+      arr.forEach(el => el.isSorted = true);
+      updateArray(arr);
+    }
+  };
+
+  const partition = async (arr: ArrayElement[], low: number, high: number): Promise<number> => {
+    if (!isRunningRef.current) return low;
+    
+    const pivot = arr[high];
+    pivot.isCompared = true;
+    updateArray(arr);
+    await sleep(1100 - speed[0] * 100);
+    
+    let i = low - 1;
+    
+    for (let j = low; j < high; j++) {
+      if (!isRunningRef.current) return low;
+      
+      arr[j].isCompared = true;
+      updateArray(arr);
+      await sleep(1100 - speed[0] * 100);
+      
+      if (arr[j].value < pivot.value) {
+        i++;
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+        arr[i].isSwapped = true;
+        arr[j].isSwapped = true;
+        updateArray(arr);
+        await sleep(1100 - speed[0] * 100);
+        arr[i].isSwapped = false;
+        arr[j].isSwapped = false;
+      }
+      
+      arr[j].isCompared = false;
+    }
+    
+    [arr[i + 1], arr[high]] = [arr[high], arr[i + 1]];
+    arr[i + 1].isSwapped = true;
+    arr[high].isSwapped = true;
+    updateArray(arr);
+    await sleep(1100 - speed[0] * 100);
+    
+    arr[i + 1].isSwapped = false;
+    arr[high].isSwapped = false;
+    pivot.isCompared = false;
+    updateArray(arr);
+    
+    return i + 1;
+  };
+
   const startSorting = async () => {
     if (array.length === 0) {
       toast.error("Generate an array first!");
@@ -206,6 +334,12 @@ const SortingVisualizer = () => {
           break;
         case 'insertion':
           await insertionSort(arrayCopy);
+          break;
+        case 'merge':
+          await mergeSort(arrayCopy);
+          break;
+        case 'quick':
+          await quickSort(arrayCopy);
           break;
         default:
           toast.error("Algorithm not implemented yet!");
@@ -328,8 +462,8 @@ const SortingVisualizer = () => {
                     <SelectItem value="bubble">Bubble Sort</SelectItem>
                     <SelectItem value="selection">Selection Sort</SelectItem>
                     <SelectItem value="insertion">Insertion Sort</SelectItem>
-                    <SelectItem value="merge">Merge Sort (Coming Soon)</SelectItem>
-                    <SelectItem value="quick">Quick Sort (Coming Soon)</SelectItem>
+                    <SelectItem value="merge">Merge Sort</SelectItem>
+                    <SelectItem value="quick">Quick Sort</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -384,8 +518,50 @@ const SortingVisualizer = () => {
                 </div>
               </div>
 
-              {/* Legend */}
+              {/* Algorithm Explanation */}
               <div className="mt-6 p-4 bg-glass-bg rounded-lg border border-glass-border">
+                <h4 className="text-sm font-medium mb-2">Algorithm Explanation:</h4>
+                <div className="text-xs space-y-2">
+                  {algorithm === 'bubble' && (
+                    <div>
+                      <p className="font-medium text-accent-cyan">Bubble Sort</p>
+                      <p>Compares adjacent elements and swaps them if they're in wrong order. Repeats until no swaps needed.</p>
+                      <p className="text-accent-pink">Time: O(n²) | Space: O(1)</p>
+                    </div>
+                  )}
+                  {algorithm === 'selection' && (
+                    <div>
+                      <p className="font-medium text-accent-cyan">Selection Sort</p>
+                      <p>Finds minimum element and places it at the beginning. Repeats for remaining unsorted portion.</p>
+                      <p className="text-accent-pink">Time: O(n²) | Space: O(1)</p>
+                    </div>
+                  )}
+                  {algorithm === 'insertion' && (
+                    <div>
+                      <p className="font-medium text-accent-cyan">Insertion Sort</p>
+                      <p>Builds sorted array one element at a time by inserting each element into its correct position.</p>
+                      <p className="text-accent-pink">Time: O(n²) | Space: O(1)</p>
+                    </div>
+                  )}
+                  {algorithm === 'merge' && (
+                    <div>
+                      <p className="font-medium text-accent-cyan">Merge Sort</p>
+                      <p>Divides array into halves, sorts them recursively, then merges sorted halves back together.</p>
+                      <p className="text-accent-pink">Time: O(n log n) | Space: O(n)</p>
+                    </div>
+                  )}
+                  {algorithm === 'quick' && (
+                    <div>
+                      <p className="font-medium text-accent-cyan">Quick Sort</p>
+                      <p>Picks a pivot, partitions array around it, then recursively sorts the partitions.</p>
+                      <p className="text-accent-pink">Time: O(n log n) avg, O(n²) worst | Space: O(log n)</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div className="mt-4 p-4 bg-glass-bg rounded-lg border border-glass-border">
                 <h4 className="text-sm font-medium mb-2">Color Legend:</h4>
                 <div className="flex flex-wrap gap-4 text-xs">
                   <div className="flex items-center gap-2">

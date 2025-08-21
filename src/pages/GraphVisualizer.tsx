@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,13 +43,16 @@ const GraphVisualizer = () => {
   const [startNode, setStartNode] = useState('');
   const [isDirected, setIsDirected] = useState(false);
   const [isWeighted, setIsWeighted] = useState(false);
+  const [nodeCount, setNodeCount] = useState([6]);
+  const [speed, setSpeed] = useState([5]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<NodeJS.Timeout[]>([]);
   const navigate = useNavigate();
 
   const sleep = (ms: number) => {
+    const delay = 1100 - speed[0] * 100;
     return new Promise(resolve => {
-      const timeout = setTimeout(resolve, ms);
+      const timeout = setTimeout(resolve, delay);
       animationRef.current.push(timeout);
     });
   };
@@ -120,8 +124,8 @@ const GraphVisualizer = () => {
   };
 
   const generateRandomGraph = (): Graph => {
-    const nodeCount = 6;
-    const nodeLabels = Array.from({ length: nodeCount }, (_, i) => String.fromCharCode(65 + i));
+    const count = nodeCount[0];
+    const nodeLabels = Array.from({ length: count }, (_, i) => String.fromCharCode(65 + i));
     const graph: Graph = {};
     
     // Initialize nodes
@@ -305,6 +309,75 @@ const GraphVisualizer = () => {
     })));
   };
 
+  // Dijkstra's Algorithm
+  const dijkstra = async (startNodeId: string) => {
+    const distances: { [key: string]: number } = {};
+    const visited = new Set<string>();
+    const unvisited = new Set<string>();
+    
+    // Initialize distances
+    Object.keys(graph).forEach(nodeId => {
+      distances[nodeId] = nodeId === startNodeId ? 0 : Infinity;
+      unvisited.add(nodeId);
+    });
+    
+    while (unvisited.size > 0 && isRunning) {
+      // Find unvisited node with minimum distance
+      let current = '';
+      let minDistance = Infinity;
+      unvisited.forEach(nodeId => {
+        if (distances[nodeId] < minDistance) {
+          minDistance = distances[nodeId];
+          current = nodeId;
+        }
+      });
+      
+      if (current === '' || distances[current] === Infinity) break;
+      
+      unvisited.delete(current);
+      visited.add(current);
+      
+      // Mark current node
+      setNodes(prev => prev.map(node => ({
+        ...node,
+        current: node.id === current,
+        visited: visited.has(node.id),
+        distance: distances[node.id] === Infinity ? undefined : distances[node.id]
+      })));
+      
+      await sleep(1000);
+      
+      // Update distances to neighbors
+      if (graph[current]) {
+        for (const neighbor of Object.keys(graph[current])) {
+          if (!visited.has(neighbor)) {
+            const newDistance = distances[current] + graph[current][neighbor];
+            
+            if (newDistance < distances[neighbor]) {
+              distances[neighbor] = newDistance;
+              
+              // Highlight edge
+              setEdges(prev => prev.map(edge => ({
+                ...edge,
+                highlighted: (edge.from === current && edge.to === neighbor) ||
+                            (!isDirected && edge.from === neighbor && edge.to === current)
+              })));
+              
+              await sleep(500);
+            }
+          }
+        }
+      }
+      
+      // Clear current marker
+      setNodes(prev => prev.map(node => ({
+        ...node,
+        current: false,
+        distance: distances[node.id] === Infinity ? undefined : distances[node.id]
+      })));
+    }
+  };
+
   const startVisualization = async () => {
     if (!startNode || Object.keys(graph).length === 0) {
       toast.error("Please generate a graph and select a start node first!");
@@ -332,7 +405,7 @@ const GraphVisualizer = () => {
           await dfs(startNode, new Set());
           break;
         case 'dijkstra':
-          toast.info("Dijkstra's algorithm - Coming soon!");
+          await dijkstra(startNode);
           break;
       }
       
@@ -503,7 +576,7 @@ const GraphVisualizer = () => {
                       <SelectContent>
                         <SelectItem value="bfs">Breadth-First Search</SelectItem>
                         <SelectItem value="dfs">Depth-First Search</SelectItem>
-                        <SelectItem value="dijkstra">Dijkstra (Coming Soon)</SelectItem>
+                        <SelectItem value="dijkstra">Dijkstra's Algorithm</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -544,6 +617,31 @@ const GraphVisualizer = () => {
                       />
                       <span className="text-sm">Weighted</span>
                     </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Nodes: {nodeCount[0]}</label>
+                    <Slider
+                      value={nodeCount}
+                      onValueChange={setNodeCount}
+                      max={12}
+                      min={3}
+                      step={1}
+                      disabled={isRunning}
+                      className="mb-4"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Speed: {speed[0]}</label>
+                    <Slider
+                      value={speed}
+                      onValueChange={setSpeed}
+                      max={10}
+                      min={1}
+                      step={1}
+                      disabled={isRunning}
+                    />
                   </div>
 
                   {nodes.length > 0 && (
@@ -591,8 +689,36 @@ const GraphVisualizer = () => {
                   </Button>
                 </div>
 
-                {/* Legend */}
+                {/* Algorithm Explanation */}
                 <div className="mt-6 p-4 bg-glass-bg rounded-lg border border-glass-border">
+                  <h4 className="text-sm font-medium mb-2">Algorithm Explanation:</h4>
+                  <div className="text-xs space-y-2">
+                    {algorithm === 'bfs' && (
+                      <div>
+                        <p className="font-medium text-accent-cyan">Breadth-First Search</p>
+                        <p>Explores nodes level by level using a queue. Visits all neighbors before going deeper.</p>
+                        <p className="text-accent-pink">Time: O(V + E) | Space: O(V)</p>
+                      </div>
+                    )}
+                    {algorithm === 'dfs' && (
+                      <div>
+                        <p className="font-medium text-accent-cyan">Depth-First Search</p>
+                        <p>Explores as far as possible along each branch before backtracking. Uses recursion/stack.</p>
+                        <p className="text-accent-pink">Time: O(V + E) | Space: O(V)</p>
+                      </div>
+                    )}
+                    {algorithm === 'dijkstra' && (
+                      <div>
+                        <p className="font-medium text-accent-cyan">Dijkstra's Algorithm</p>
+                        <p>Finds shortest paths from source to all other nodes in weighted graphs with non-negative edges.</p>
+                        <p className="text-accent-pink">Time: O((V + E) log V) | Space: O(V)</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Legend */}
+                <div className="mt-4 p-4 bg-glass-bg rounded-lg border border-glass-border">
                   <h4 className="text-sm font-medium mb-2">Legend:</h4>
                   <div className="space-y-1 text-xs">
                     <div className="flex items-center gap-2">
