@@ -29,7 +29,7 @@ interface Graph {
   [key: string]: { [key: string]: number };
 }
 
-type Algorithm = 'bfs' | 'dfs' | 'dijkstra';
+type Algorithm = 'bfs' | 'dfs' | 'dijkstra' | 'bellman-ford';
 type InputMode = 'adjacency-list' | 'adjacency-matrix' | 'random';
 
 const GraphVisualizer = () => {
@@ -169,7 +169,7 @@ const GraphVisualizer = () => {
         visited: false,
         current: false,
         inQueue: false,
-        distance: algorithm === 'dijkstra' ? (id === startNode ? 0 : Infinity) : undefined
+        distance: algorithm === 'dijkstra' || algorithm === 'bellman-ford' ? (id === startNode ? 0 : Infinity) : undefined
       };
     });
     
@@ -378,6 +378,95 @@ const GraphVisualizer = () => {
     }
   };
 
+  // Bellman-Ford Algorithm
+  const bellmanFord = async (startNodeId: string) => {
+    const distances: { [key: string]: number } = {};
+    const nodeIds = Object.keys(graph);
+    
+    // Initialize distances
+    nodeIds.forEach(nodeId => {
+      distances[nodeId] = nodeId === startNodeId ? 0 : Infinity;
+    });
+    
+    // Update distances for all nodes
+    setNodes(prev => prev.map(node => ({
+      ...node,
+      distance: distances[node.id] === Infinity ? undefined : distances[node.id]
+    })));
+    
+    // Relax edges V-1 times
+    for (let i = 0; i < nodeIds.length - 1 && isRunning; i++) {
+      let hasUpdate = false;
+      
+      for (const from of nodeIds) {
+        if (!isRunning) return;
+        
+        // Highlight current node
+        setNodes(prev => prev.map(node => ({
+          ...node,
+          current: node.id === from,
+          distance: distances[node.id] === Infinity ? undefined : distances[node.id]
+        })));
+        
+        await sleep(800);
+        
+        if (graph[from] && distances[from] !== Infinity) {
+          for (const to of Object.keys(graph[from])) {
+            const weight = graph[from][to];
+            const newDistance = distances[from] + weight;
+            
+            if (newDistance < distances[to]) {
+              distances[to] = newDistance;
+              hasUpdate = true;
+              
+              // Highlight edge
+              setEdges(prev => prev.map(edge => ({
+                ...edge,
+                highlighted: (edge.from === from && edge.to === to) ||
+                            (!isDirected && edge.from === to && edge.to === from)
+              })));
+              
+              // Update node distances
+              setNodes(prev => prev.map(node => ({
+                ...node,
+                distance: distances[node.id] === Infinity ? undefined : distances[node.id],
+                visited: distances[node.id] !== Infinity
+              })));
+              
+              await sleep(600);
+            }
+          }
+        }
+      }
+      
+      if (!hasUpdate) break; // Early termination if no updates
+    }
+    
+    // Check for negative cycles
+    for (const from of nodeIds) {
+      if (!isRunning) return;
+      
+      if (graph[from] && distances[from] !== Infinity) {
+        for (const to of Object.keys(graph[from])) {
+          const weight = graph[from][to];
+          const newDistance = distances[from] + weight;
+          
+          if (newDistance < distances[to]) {
+            toast.error("Negative cycle detected!");
+            return;
+          }
+        }
+      }
+    }
+    
+    // Clear current markers
+    setNodes(prev => prev.map(node => ({
+      ...node,
+      current: false,
+      distance: distances[node.id] === Infinity ? undefined : distances[node.id]
+    })));
+  };
+
   const startVisualization = async () => {
     if (!startNode || Object.keys(graph).length === 0) {
       toast.error("Please generate a graph and select a start node first!");
@@ -392,7 +481,7 @@ const GraphVisualizer = () => {
       visited: false, 
       current: false, 
       inQueue: false,
-      distance: algorithm === 'dijkstra' ? (node.id === startNode ? 0 : Infinity) : undefined
+      distance: algorithm === 'dijkstra' || algorithm === 'bellman-ford' ? (node.id === startNode ? 0 : Infinity) : undefined
     })));
     setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
     
@@ -406,6 +495,9 @@ const GraphVisualizer = () => {
           break;
         case 'dijkstra':
           await dijkstra(startNode);
+          break;
+        case 'bellman-ford':
+          await bellmanFord(startNode);
           break;
       }
       
@@ -495,8 +587,8 @@ const GraphVisualizer = () => {
       ctx.textAlign = 'center';
       ctx.fillText(node.id, node.x, node.y + 5);
       
-      // Distance for Dijkstra
-      if (algorithm === 'dijkstra' && node.distance !== undefined && node.distance !== Infinity) {
+      // Distance for algorithms that calculate distances
+      if ((algorithm === 'dijkstra' || algorithm === 'bellman-ford') && node.distance !== undefined && node.distance !== Infinity) {
         ctx.fillStyle = '#000000';
         ctx.font = '10px Arial';
         ctx.fillText(`d:${node.distance}`, node.x, node.y - 35);
@@ -577,6 +669,7 @@ const GraphVisualizer = () => {
                         <SelectItem value="bfs">Breadth-First Search</SelectItem>
                         <SelectItem value="dfs">Depth-First Search</SelectItem>
                         <SelectItem value="dijkstra">Dijkstra's Algorithm</SelectItem>
+                        <SelectItem value="bellman-ford">Bellman-Ford Algorithm</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -712,6 +805,13 @@ const GraphVisualizer = () => {
                         <p className="font-medium text-accent-cyan">Dijkstra's Algorithm</p>
                         <p>Finds shortest paths from source to all other nodes in weighted graphs with non-negative edges.</p>
                         <p className="text-accent-pink">Time: O((V + E) log V) | Space: O(V)</p>
+                      </div>
+                    )}
+                    {algorithm === 'bellman-ford' && (
+                      <div>
+                        <p className="font-medium text-accent-cyan">Bellman-Ford Algorithm</p>
+                        <p>Finds shortest paths from source, works with negative edges and detects negative cycles.</p>
+                        <p className="text-accent-pink">Time: O(V × E) | Space: O(V)</p>
                       </div>
                     )}
                   </div>
