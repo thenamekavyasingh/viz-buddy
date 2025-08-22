@@ -45,6 +45,7 @@ const GraphVisualizer = () => {
   const [isWeighted, setIsWeighted] = useState(false);
   const [nodeCount, setNodeCount] = useState([6]);
   const [speed, setSpeed] = useState([5]);
+  const [traversalOrder, setTraversalOrder] = useState<string[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<NodeJS.Timeout[]>([]);
   const navigate = useNavigate();
@@ -64,6 +65,7 @@ const GraphVisualizer = () => {
     // Reset all visual states
     setNodes(prev => prev.map(node => ({ ...node, visited: false, current: false, inQueue: false })));
     setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
+    setTraversalOrder([]);
   };
 
   const parseAdjacencyList = (input: string): Graph => {
@@ -226,6 +228,7 @@ const GraphVisualizer = () => {
   const bfs = async (startNodeId: string) => {
     const queue: string[] = [startNodeId];
     const visited = new Set<string>();
+    const order: string[] = [];
     
     while (queue.length > 0) {
       if (!isRunning) return;
@@ -235,8 +238,12 @@ const GraphVisualizer = () => {
       if (visited.has(current)) continue;
       
       visited.add(current);
+      order.push(current);
       
-      // Mark current node
+      // Update traversal order
+      setTraversalOrder([...order]);
+      
+      // Mark current node as current
       setNodes(prev => prev.map(node => ({
         ...node,
         current: node.id === current,
@@ -248,8 +255,14 @@ const GraphVisualizer = () => {
       // Add neighbors to queue
       if (graph[current]) {
         for (const neighbor of Object.keys(graph[current])) {
-          if (!visited.has(neighbor)) {
+          if (!visited.has(neighbor) && !queue.includes(neighbor)) {
             queue.push(neighbor);
+            
+            // Mark as in queue
+            setNodes(prev => prev.map(node => ({
+              ...node,
+              inQueue: node.id === neighbor || node.inQueue
+            })));
             
             // Highlight edge
             setEdges(prev => prev.map(edge => ({
@@ -267,16 +280,24 @@ const GraphVisualizer = () => {
       setNodes(prev => prev.map(node => ({
         ...node,
         visited: visited.has(node.id),
-        current: false
+        current: false,
+        inQueue: queue.includes(node.id)
       })));
+      
+      // Clear edge highlighting
+      setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
     }
   };
 
   // DFS Algorithm
-  const dfs = async (current: string, visited: Set<string>) => {
+  const dfs = async (current: string, visited: Set<string>, order: string[]) => {
     if (!isRunning || visited.has(current)) return;
     
     visited.add(current);
+    order.push(current);
+    
+    // Update traversal order
+    setTraversalOrder([...order]);
     
     // Mark current node
     setNodes(prev => prev.map(node => ({
@@ -299,7 +320,10 @@ const GraphVisualizer = () => {
           })));
           
           await sleep();
-          await dfs(neighbor, visited);
+          await dfs(neighbor, visited, order);
+          
+          // Clear edge highlighting after recursion
+          setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
         }
       }
     }
@@ -316,6 +340,7 @@ const GraphVisualizer = () => {
     const distances: { [key: string]: number } = {};
     const visited = new Set<string>();
     const unvisited = new Set<string>();
+    const order: string[] = [];
     
     // Initialize distances
     Object.keys(graph).forEach(nodeId => {
@@ -340,6 +365,10 @@ const GraphVisualizer = () => {
       
       unvisited.delete(current);
       visited.add(current);
+      order.push(current);
+      
+      // Update traversal order
+      setTraversalOrder([...order]);
       
       // Mark current node
       setNodes(prev => prev.map(node => ({
@@ -379,12 +408,13 @@ const GraphVisualizer = () => {
         }
       }
       
-      // Clear current marker
+      // Clear current marker and edge highlighting
       setNodes(prev => prev.map(node => ({
         ...node,
         current: false,
         distance: distances[node.id] === Infinity ? undefined : distances[node.id]
       })));
+      setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
     }
   };
 
@@ -392,6 +422,7 @@ const GraphVisualizer = () => {
   const bellmanFord = async (startNodeId: string) => {
     const distances: { [key: string]: number } = {};
     const nodeIds = Object.keys(graph);
+    const order: string[] = [];
     
     // Initialize distances
     nodeIds.forEach(nodeId => {
@@ -411,11 +442,17 @@ const GraphVisualizer = () => {
       for (const from of nodeIds) {
         if (!isRunning) return;
         
+        if (!order.includes(from)) {
+          order.push(from);
+          setTraversalOrder([...order]);
+        }
+        
         // Highlight current node
         setNodes(prev => prev.map(node => ({
           ...node,
           current: node.id === from,
-          distance: distances[node.id] === Infinity ? undefined : distances[node.id]
+          distance: distances[node.id] === Infinity ? undefined : distances[node.id],
+          visited: distances[node.id] !== Infinity
         })));
         
         await sleep();
@@ -447,6 +484,14 @@ const GraphVisualizer = () => {
             }
           }
         }
+        
+        // Clear current and edge highlighting
+        setNodes(prev => prev.map(node => ({
+          ...node,
+          current: false,
+          distance: distances[node.id] === Infinity ? undefined : distances[node.id]
+        })));
+        setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
       }
       
       if (!hasUpdate) break; // Early termination if no updates
@@ -468,13 +513,6 @@ const GraphVisualizer = () => {
         }
       }
     }
-    
-    // Clear current markers
-    setNodes(prev => prev.map(node => ({
-      ...node,
-      current: false,
-      distance: distances[node.id] === Infinity ? undefined : distances[node.id]
-    })));
   };
 
   const startVisualization = async () => {
@@ -484,6 +522,7 @@ const GraphVisualizer = () => {
     }
     
     setIsRunning(true);
+    setTraversalOrder([]);
     
     // Reset visualization state
     setNodes(prev => prev.map(node => ({ 
@@ -501,7 +540,7 @@ const GraphVisualizer = () => {
           await bfs(startNode);
           break;
         case 'dfs':
-          await dfs(startNode, new Set());
+          await dfs(startNode, new Set(), []);
           break;
         case 'dijkstra':
           await dijkstra(startNode);
@@ -843,6 +882,18 @@ const GraphVisualizer = () => {
                       <div className="w-4 h-4 bg-green-500 rounded-full"></div>
                       <span>Visited</span>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-yellow-500 rounded-full"></div>
+                      <span>In Queue</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Traversal Order Output */}
+                <div className="mt-4 p-4 bg-glass-bg rounded-lg border border-glass-border">
+                  <h4 className="text-sm font-medium mb-2">Traversal Order:</h4>
+                  <div className="min-h-[40px] p-2 bg-muted rounded text-xs font-mono">
+                    {traversalOrder.length > 0 ? traversalOrder.join(' → ') : 'No traversal yet'}
                   </div>
                 </div>
               </div>
