@@ -226,12 +226,15 @@ const GraphVisualizer = () => {
 
   // BFS Algorithm
   const bfs = async (startNodeId: string) => {
+    console.log("BFS starting with node:", startNodeId);
+    console.log("Current graph:", graph);
+    
     const queue: string[] = [startNodeId];
     const visited = new Set<string>();
     const order: string[] = [];
     
-    while (queue.length > 0) {
-      if (!isRunning) return;
+    while (queue.length > 0 && isRunning) {
+      console.log("BFS loop, queue:", queue, "visited:", Array.from(visited));
       
       const current = queue.shift()!;
       
@@ -239,6 +242,8 @@ const GraphVisualizer = () => {
       
       visited.add(current);
       order.push(current);
+      
+      console.log("Visiting node:", current);
       
       // Update traversal order
       setTraversalOrder([...order]);
@@ -254,9 +259,11 @@ const GraphVisualizer = () => {
       
       // Add neighbors to queue
       if (graph[current]) {
+        console.log("Neighbors of", current, ":", Object.keys(graph[current]));
         for (const neighbor of Object.keys(graph[current])) {
           if (!visited.has(neighbor) && !queue.includes(neighbor)) {
             queue.push(neighbor);
+            console.log("Added to queue:", neighbor);
             
             // Mark as in queue
             setNodes(prev => prev.map(node => ({
@@ -287,14 +294,24 @@ const GraphVisualizer = () => {
       // Clear edge highlighting
       setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
     }
+    
+    console.log("BFS completed. Final order:", order);
   };
 
   // DFS Algorithm
   const dfs = async (current: string, visited: Set<string>, order: string[]) => {
-    if (!isRunning || visited.has(current)) return;
+    console.log("DFS visiting:", current, "visited so far:", Array.from(visited));
+    console.log("Current isRunning:", isRunning);
+    
+    if (!isRunning || visited.has(current)) {
+      console.log("Stopping DFS - isRunning:", isRunning, "already visited:", visited.has(current));
+      return;
+    }
     
     visited.add(current);
     order.push(current);
+    
+    console.log("Added to order:", current, "new order:", [...order]);
     
     // Update traversal order
     setTraversalOrder([...order]);
@@ -310,8 +327,11 @@ const GraphVisualizer = () => {
     
     // Visit neighbors
     if (graph[current]) {
+      console.log("Exploring neighbors of", current, ":", Object.keys(graph[current]));
       for (const neighbor of Object.keys(graph[current])) {
         if (!visited.has(neighbor) && isRunning) {
+          console.log("Will visit neighbor:", neighbor);
+          
           // Highlight edge
           setEdges(prev => prev.map(edge => ({
             ...edge,
@@ -333,6 +353,8 @@ const GraphVisualizer = () => {
       ...node,
       current: false
     })));
+    
+    console.log("DFS completed for node:", current);
   };
 
   // Dijkstra's Algorithm
@@ -516,6 +538,8 @@ const GraphVisualizer = () => {
   };
 
   const startVisualization = async () => {
+    console.log("Starting visualization with:", { algorithm, startNode, graphKeys: Object.keys(graph) });
+    
     if (!startNode || Object.keys(graph).length === 0) {
       toast.error("Please generate a graph and select a start node first!");
       return;
@@ -534,18 +558,24 @@ const GraphVisualizer = () => {
     })));
     setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
     
+    console.log("About to start algorithm:", algorithm);
+    
     try {
       switch (algorithm) {
         case 'bfs':
+          console.log("Starting BFS");
           await bfs(startNode);
           break;
         case 'dfs':
+          console.log("Starting DFS"); 
           await dfs(startNode, new Set(), []);
           break;
         case 'dijkstra':
+          console.log("Starting Dijkstra");
           await dijkstra(startNode);
           break;
         case 'bellman-ford':
+          console.log("Starting Bellman-Ford");
           await bellmanFord(startNode);
           break;
       }
