@@ -49,7 +49,7 @@ const GraphVisualizer = () => {
   const animationRef = useRef<NodeJS.Timeout[]>([]);
   const navigate = useNavigate();
 
-  const sleep = (ms: number) => {
+  const sleep = () => {
     const delay = 1100 - speed[0] * 100;
     return new Promise(resolve => {
       const timeout = setTimeout(resolve, delay);
@@ -227,10 +227,14 @@ const GraphVisualizer = () => {
     const queue: string[] = [startNodeId];
     const visited = new Set<string>();
     
-    while (queue.length > 0 && isRunning) {
+    while (queue.length > 0) {
+      if (!isRunning) return;
+      
       const current = queue.shift()!;
       
       if (visited.has(current)) continue;
+      
+      visited.add(current);
       
       // Mark current node
       setNodes(prev => prev.map(node => ({
@@ -239,9 +243,7 @@ const GraphVisualizer = () => {
         visited: visited.has(node.id)
       })));
       
-      await sleep(1000);
-      
-      visited.add(current);
+      await sleep();
       
       // Add neighbors to queue
       if (graph[current]) {
@@ -256,12 +258,12 @@ const GraphVisualizer = () => {
                           (!isDirected && edge.from === neighbor && edge.to === current)
             })));
             
-            await sleep(500);
+            await sleep();
           }
         }
       }
       
-      // Mark node as visited
+      // Mark node as visited, clear current
       setNodes(prev => prev.map(node => ({
         ...node,
         visited: visited.has(node.id),
@@ -283,12 +285,12 @@ const GraphVisualizer = () => {
       visited: visited.has(node.id)
     })));
     
-    await sleep(1000);
+    await sleep();
     
     // Visit neighbors
     if (graph[current]) {
       for (const neighbor of Object.keys(graph[current])) {
-        if (!visited.has(neighbor)) {
+        if (!visited.has(neighbor) && isRunning) {
           // Highlight edge
           setEdges(prev => prev.map(edge => ({
             ...edge,
@@ -296,7 +298,7 @@ const GraphVisualizer = () => {
                         (!isDirected && edge.from === neighbor && edge.to === current)
           })));
           
-          await sleep(500);
+          await sleep();
           await dfs(neighbor, visited);
         }
       }
@@ -321,7 +323,9 @@ const GraphVisualizer = () => {
       unvisited.add(nodeId);
     });
     
-    while (unvisited.size > 0 && isRunning) {
+    while (unvisited.size > 0) {
+      if (!isRunning) return;
+      
       // Find unvisited node with minimum distance
       let current = '';
       let minDistance = Infinity;
@@ -345,7 +349,7 @@ const GraphVisualizer = () => {
         distance: distances[node.id] === Infinity ? undefined : distances[node.id]
       })));
       
-      await sleep(1000);
+      await sleep();
       
       // Update distances to neighbors
       if (graph[current]) {
@@ -363,7 +367,13 @@ const GraphVisualizer = () => {
                             (!isDirected && edge.from === neighbor && edge.to === current)
               })));
               
-              await sleep(500);
+              // Update distances display
+              setNodes(prev => prev.map(node => ({
+                ...node,
+                distance: distances[node.id] === Infinity ? undefined : distances[node.id]
+              })));
+              
+              await sleep();
             }
           }
         }
@@ -408,7 +418,7 @@ const GraphVisualizer = () => {
           distance: distances[node.id] === Infinity ? undefined : distances[node.id]
         })));
         
-        await sleep(800);
+        await sleep();
         
         if (graph[from] && distances[from] !== Infinity) {
           for (const to of Object.keys(graph[from])) {
@@ -433,7 +443,7 @@ const GraphVisualizer = () => {
                 visited: distances[node.id] !== Infinity
               })));
               
-              await sleep(600);
+              await sleep();
             }
           }
         }
