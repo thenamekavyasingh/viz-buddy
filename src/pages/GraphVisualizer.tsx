@@ -48,6 +48,7 @@ const GraphVisualizer = () => {
   const [traversalOrder, setTraversalOrder] = useState<string[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<NodeJS.Timeout[]>([]);
+  const isRunningRef = useRef(false);
   const navigate = useNavigate();
 
   const sleep = () => {
@@ -62,6 +63,7 @@ const GraphVisualizer = () => {
     animationRef.current.forEach(timeout => clearTimeout(timeout));
     animationRef.current = [];
     setIsRunning(false);
+    isRunningRef.current = false;
     // Reset all visual states
     setNodes(prev => prev.map(node => ({ ...node, visited: false, current: false, inQueue: false })));
     setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
@@ -233,7 +235,7 @@ const GraphVisualizer = () => {
     const visited = new Set<string>();
     const order: string[] = [];
     
-    while (queue.length > 0 && isRunning) {
+    while (queue.length > 0 && isRunningRef.current) {
       console.log("BFS loop, queue:", queue, "visited:", Array.from(visited));
       
       const current = queue.shift()!;
@@ -303,8 +305,8 @@ const GraphVisualizer = () => {
     console.log("DFS visiting:", current, "visited so far:", Array.from(visited));
     console.log("Current isRunning:", isRunning);
     
-    if (!isRunning || visited.has(current)) {
-      console.log("Stopping DFS - isRunning:", isRunning, "already visited:", visited.has(current));
+    if (!isRunningRef.current || visited.has(current)) {
+      console.log("Stopping DFS - isRunning:", isRunningRef.current, "already visited:", visited.has(current));
       return;
     }
     
@@ -329,7 +331,7 @@ const GraphVisualizer = () => {
     if (graph[current]) {
       console.log("Exploring neighbors of", current, ":", Object.keys(graph[current]));
       for (const neighbor of Object.keys(graph[current])) {
-        if (!visited.has(neighbor) && isRunning) {
+        if (!visited.has(neighbor) && isRunningRef.current) {
           console.log("Will visit neighbor:", neighbor);
           
           // Highlight edge
@@ -370,8 +372,8 @@ const GraphVisualizer = () => {
       unvisited.add(nodeId);
     });
     
-    while (unvisited.size > 0) {
-      if (!isRunning) return;
+    while (unvisited.size > 0 && isRunningRef.current) {
+      if (!isRunningRef.current) return;
       
       // Find unvisited node with minimum distance
       let current = '';
@@ -458,11 +460,11 @@ const GraphVisualizer = () => {
     })));
     
     // Relax edges V-1 times
-    for (let i = 0; i < nodeIds.length - 1 && isRunning; i++) {
+    for (let i = 0; i < nodeIds.length - 1 && isRunningRef.current; i++) {
       let hasUpdate = false;
       
       for (const from of nodeIds) {
-        if (!isRunning) return;
+        if (!isRunningRef.current) return;
         
         if (!order.includes(from)) {
           order.push(from);
@@ -521,7 +523,7 @@ const GraphVisualizer = () => {
     
     // Check for negative cycles
     for (const from of nodeIds) {
-      if (!isRunning) return;
+      if (!isRunningRef.current) return;
       
       if (graph[from] && distances[from] !== Infinity) {
         for (const to of Object.keys(graph[from])) {
@@ -545,6 +547,7 @@ const GraphVisualizer = () => {
       return;
     }
     
+    isRunningRef.current = true;
     setIsRunning(true);
     setTraversalOrder([]);
     
@@ -557,7 +560,7 @@ const GraphVisualizer = () => {
       distance: algorithm === 'dijkstra' || algorithm === 'bellman-ford' ? (node.id === startNode ? 0 : Infinity) : undefined
     })));
     setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
-    
+
     console.log("About to start algorithm:", algorithm);
     
     try {
@@ -580,13 +583,14 @@ const GraphVisualizer = () => {
           break;
       }
       
-      if (isRunning) {
+      if (isRunningRef.current) {
         toast.success("Algorithm visualization completed!");
       }
     } catch (error) {
       console.error("Visualization error:", error);
     } finally {
       setIsRunning(false);
+      isRunningRef.current = false;
     }
   };
 
