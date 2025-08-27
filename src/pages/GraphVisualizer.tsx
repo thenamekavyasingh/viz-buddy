@@ -713,7 +713,7 @@ const GraphVisualizer = () => {
               </div>
               
               {/* Control Buttons */}
-              <div className="flex gap-2 justify-center">
+              <div className="flex gap-2 justify-center mb-4">
                 <Button 
                   onClick={startVisualization} 
                   disabled={isRunning || nodes.length === 0}
@@ -732,6 +732,14 @@ const GraphVisualizer = () => {
                   <Square className="w-4 h-4 mr-2" />
                   Stop
                 </Button>
+              </div>
+
+              {/* Traversal Order Output */}
+              <div className="glass-container p-4">
+                <h4 className="text-sm font-medium mb-2">Traversal Order:</h4>
+                <div className="min-h-[40px] p-3 bg-muted rounded text-sm font-mono border">
+                  {traversalOrder.length > 0 ? traversalOrder.join(' → ') : 'No traversal yet'}
+                </div>
               </div>
             </div>
 
@@ -920,14 +928,6 @@ const GraphVisualizer = () => {
                       <div className="w-4 h-4 bg-yellow-500 rounded-full"></div>
                       <span>In Queue</span>
                     </div>
-                  </div>
-                </div>
-
-                {/* Traversal Order Output */}
-                <div className="mt-4 p-4 bg-glass-bg rounded-lg border border-glass-border">
-                  <h4 className="text-sm font-medium mb-2">Traversal Order:</h4>
-                  <div className="min-h-[40px] p-2 bg-muted rounded text-xs font-mono">
-                    {traversalOrder.length > 0 ? traversalOrder.join(' → ') : 'No traversal yet'}
                   </div>
                 </div>
               </div>
