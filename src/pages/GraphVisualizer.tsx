@@ -878,11 +878,23 @@ const GraphVisualizer = () => {
                   </div>
                 )}
 
+                {inputMode === 'random' && (
+                  <div className="mb-4 p-4 bg-muted/50 rounded-lg border border-dashed border-muted-foreground/30">
+                    <p className="text-sm text-muted-foreground text-center">
+                      Random graph will be generated with {nodeCount[0]} nodes
+                    </p>
+                    <p className="text-xs text-muted-foreground/80 text-center mt-1">
+                      {isDirected ? 'Directed' : 'Undirected'} • {isWeighted ? 'Weighted' : 'Unweighted'}
+                    </p>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Button 
                     onClick={generateGraph} 
                     disabled={isRunning}
-                    className="btn-glass w-full"
+                    className="btn-glass w-full bg-primary/10 hover:bg-primary/20 border-primary/30"
+                    size="lg"
                   >
                     <RotateCcw className="w-4 h-4 mr-2" />
                     {inputMode === 'random' ? 'Generate Random Graph' : 'Generate Graph'}

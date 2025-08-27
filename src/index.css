@@ -97,6 +97,31 @@
     background: var(--hover-glass);
     box-shadow: var(--shadow-glow);
   }
+  
+
+  /* Dropdown Fixes - Ensure proper background and z-index */
+  [data-radix-select-content],
+  [data-radix-popper-content-wrapper] {
+    z-index: 50 !important;
+  }
+  
+  [data-radix-select-content] {
+    background: var(--glass-bg) !important;
+    backdrop-filter: var(--blur-backdrop) !important;
+    -webkit-backdrop-filter: var(--blur-backdrop) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: var(--shadow-glass) !important;
+  }
+  
+  [data-radix-select-item] {
+    background: transparent !important;
+    transition: var(--transition-smooth) !important;
+  }
+  
+  [data-radix-select-item]:hover,
+  [data-radix-select-item][data-highlighted] {
+    background: var(--hover-glass) !important;
+  }
 
   /* Typography */
   .title-hero {
