@@ -43,6 +43,7 @@ const GraphVisualizer = () => {
   const [startNode, setStartNode] = useState('');
   const [isDirected, setIsDirected] = useState(false);
   const [isWeighted, setIsWeighted] = useState(false);
+  const [isAcyclic, setIsAcyclic] = useState(false);
   const [nodeCount, setNodeCount] = useState([6]);
   const [speed, setSpeed] = useState([5]);
   const [traversalOrder, setTraversalOrder] = useState<string[]>([]);
@@ -137,35 +138,55 @@ const GraphVisualizer = () => {
       graph[label] = {};
     });
     
-    // First, create a connected graph by connecting each node to the next (ensuring connectivity)
-    for (let i = 0; i < nodeLabels.length; i++) {
-      const from = nodeLabels[i];
-      const to = nodeLabels[(i + 1) % nodeLabels.length];
-      const weight = isWeighted ? Math.floor(Math.random() * 5) + 1 : 1;
-      
-      graph[from][to] = weight;
-      if (!isDirected) {
-        graph[to][from] = weight;
+    if (isAcyclic && isDirected) {
+      // For acyclic directed graphs (DAG), only allow edges from lower to higher index
+      for (let i = 0; i < nodeLabels.length; i++) {
+        const from = nodeLabels[i];
+        // Connect to a few random higher-index nodes
+        const possibleTargets = nodeLabels.slice(i + 1);
+        const connectionCount = Math.min(Math.floor(Math.random() * 3) + 1, possibleTargets.length);
+        
+        for (let j = 0; j < connectionCount; j++) {
+          if (possibleTargets.length > 0) {
+            const randomIndex = Math.floor(Math.random() * possibleTargets.length);
+            const to = possibleTargets.splice(randomIndex, 1)[0];
+            const weight = isWeighted ? Math.floor(Math.random() * 10) + 1 : 1;
+            graph[from][to] = weight;
+          }
+        }
       }
-    }
-    
-    // Add additional random edges for complexity
-    const maxAdditionalEdges = Math.floor(count * (count - 1) / 4); // 25% of possible edges
-    const additionalEdges = Math.floor(Math.random() * maxAdditionalEdges) + count;
-    
-    for (let i = 0; i < additionalEdges; i++) {
-      const from = nodeLabels[Math.floor(Math.random() * nodeLabels.length)];
-      const availableTargets = nodeLabels.filter(to => 
-        to !== from && !graph[from][to] // Don't create duplicate edges
-      );
-      
-      if (availableTargets.length > 0) {
-        const to = availableTargets[Math.floor(Math.random() * availableTargets.length)];
-        const weight = isWeighted ? Math.floor(Math.random() * 10) + 1 : 1;
+    } else {
+      // For cyclic graphs or undirected graphs, use the original algorithm
+      // First, create a connected graph by connecting each node to the next (ensuring connectivity)
+      for (let i = 0; i < nodeLabels.length; i++) {
+        const from = nodeLabels[i];
+        const to = nodeLabels[(i + 1) % nodeLabels.length];
+        const weight = isWeighted ? Math.floor(Math.random() * 5) + 1 : 1;
         
         graph[from][to] = weight;
         if (!isDirected) {
           graph[to][from] = weight;
+        }
+      }
+      
+      // Add additional random edges for complexity
+      const maxAdditionalEdges = Math.floor(count * (count - 1) / 4); // 25% of possible edges
+      const additionalEdges = Math.floor(Math.random() * maxAdditionalEdges) + count;
+      
+      for (let i = 0; i < additionalEdges; i++) {
+        const from = nodeLabels[Math.floor(Math.random() * nodeLabels.length)];
+        const availableTargets = nodeLabels.filter(to => 
+          to !== from && !graph[from][to] // Don't create duplicate edges
+        );
+        
+        if (availableTargets.length > 0) {
+          const to = availableTargets[Math.floor(Math.random() * availableTargets.length)];
+          const weight = isWeighted ? Math.floor(Math.random() * 10) + 1 : 1;
+          
+          graph[from][to] = weight;
+          if (!isDirected) {
+            graph[to][from] = weight;
+          }
         }
       }
     }
@@ -819,6 +840,19 @@ const GraphVisualizer = () => {
                     </label>
                   </div>
 
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isAcyclic}
+                        onChange={(e) => setIsAcyclic(e.target.checked)}
+                        disabled={isRunning || !isDirected}
+                        className="rounded"
+                      />
+                      <span className="text-sm">Acyclic (DAG)</span>
+                    </label>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium mb-2">Nodes: {nodeCount[0]}</label>
                     <Slider
@@ -884,7 +918,7 @@ const GraphVisualizer = () => {
                       Random graph will be generated with {nodeCount[0]} nodes
                     </p>
                     <p className="text-xs text-muted-foreground/80 text-center mt-1">
-                      {isDirected ? 'Directed' : 'Undirected'} • {isWeighted ? 'Weighted' : 'Unweighted'}
+                      {isDirected ? 'Directed' : 'Undirected'} • {isWeighted ? 'Weighted' : 'Unweighted'} • {isAcyclic && isDirected ? 'Acyclic (DAG)' : 'Cyclic'}
                     </p>
                   </div>
                 )}
