@@ -137,22 +137,38 @@ const GraphVisualizer = () => {
       graph[label] = {};
     });
     
-    // Add random edges
-    nodeLabels.forEach(from => {
-      const edgeCount = Math.floor(Math.random() * 3) + 1;
-      const availableNodes = nodeLabels.filter(n => n !== from);
+    // First, create a connected graph by connecting each node to the next (ensuring connectivity)
+    for (let i = 0; i < nodeLabels.length; i++) {
+      const from = nodeLabels[i];
+      const to = nodeLabels[(i + 1) % nodeLabels.length];
+      const weight = isWeighted ? Math.floor(Math.random() * 5) + 1 : 1;
       
-      for (let i = 0; i < edgeCount && availableNodes.length > 0; i++) {
-        const randomIndex = Math.floor(Math.random() * availableNodes.length);
-        const to = availableNodes.splice(randomIndex, 1)[0];
+      graph[from][to] = weight;
+      if (!isDirected) {
+        graph[to][from] = weight;
+      }
+    }
+    
+    // Add additional random edges for complexity
+    const maxAdditionalEdges = Math.floor(count * (count - 1) / 4); // 25% of possible edges
+    const additionalEdges = Math.floor(Math.random() * maxAdditionalEdges) + count;
+    
+    for (let i = 0; i < additionalEdges; i++) {
+      const from = nodeLabels[Math.floor(Math.random() * nodeLabels.length)];
+      const availableTargets = nodeLabels.filter(to => 
+        to !== from && !graph[from][to] // Don't create duplicate edges
+      );
+      
+      if (availableTargets.length > 0) {
+        const to = availableTargets[Math.floor(Math.random() * availableTargets.length)];
         const weight = isWeighted ? Math.floor(Math.random() * 10) + 1 : 1;
-        graph[from][to] = weight;
         
+        graph[from][to] = weight;
         if (!isDirected) {
           graph[to][from] = weight;
         }
       }
-    });
+    }
     
     return graph;
   };
