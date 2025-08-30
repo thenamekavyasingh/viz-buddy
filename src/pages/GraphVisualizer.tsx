@@ -47,10 +47,102 @@ const GraphVisualizer = () => {
   const [nodeCount, setNodeCount] = useState([6]);
   const [speed, setSpeed] = useState([5]);
   const [traversalOrder, setTraversalOrder] = useState<string[]>([]);
+  const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<NodeJS.Timeout[]>([]);
   const isRunningRef = useRef(false);
   const navigate = useNavigate();
+
+  // Responsive canvas sizing
+  useEffect(() => {
+    const updateCanvasSize = () => {
+      if (containerRef.current) {
+        const container = containerRef.current;
+        const containerWidth = container.clientWidth - 48; // Account for padding
+        const isMobile = window.innerWidth < 768;
+        const isTablet = window.innerWidth >= 768 && window.innerWidth < 1024;
+        
+        let width = containerWidth;
+        let height = isMobile ? 400 : isTablet ? 500 : 600;
+        
+        // Maintain aspect ratio and ensure minimum dimensions
+        width = Math.max(300, Math.min(width, 1000));
+        height = Math.max(300, height);
+        
+        setCanvasSize({ width, height });
+      }
+    };
+    
+    updateCanvasSize();
+    window.addEventListener('resize', updateCanvasSize);
+    return () => window.removeEventListener('resize', updateCanvasSize);
+  }, []);
+
+  // Touch event handling for mobile devices
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleTouch = (e: TouchEvent) => {
+      e.preventDefault();
+      const touch = e.touches[0] || e.changedTouches[0];
+      if (!touch) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (touch.clientX - rect.left) * scaleX;
+      const y = (touch.clientY - rect.top) * scaleY;
+
+      // Find clicked node
+      const clickedNode = nodes.find(node => {
+        const distance = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2);
+        return distance <= 25;
+      });
+
+      if (clickedNode && !isRunning) {
+        setStartNode(clickedNode.id);
+        toast.success(`Start node set to ${clickedNode.id}`);
+      }
+    };
+
+    canvas.addEventListener('touchstart', handleTouch);
+    canvas.addEventListener('touchend', handleTouch);
+    
+    return () => {
+      canvas.removeEventListener('touchstart', handleTouch);
+      canvas.removeEventListener('touchend', handleTouch);
+    };
+  }, [nodes, isRunning]);
+
+  // Mouse click handling for desktop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleClick = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+
+      // Find clicked node
+      const clickedNode = nodes.find(node => {
+        const distance = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2);
+        return distance <= 25;
+      });
+
+      if (clickedNode && !isRunning) {
+        setStartNode(clickedNode.id);
+        toast.success(`Start node set to ${clickedNode.id}`);
+      }
+    };
+
+    canvas.addEventListener('click', handleClick);
+    return () => canvas.removeEventListener('click', handleClick);
+  }, [nodes, isRunning]);
 
   const sleep = () => {
     const delay = 1100 - speed[0] * 100;
@@ -196,9 +288,9 @@ const GraphVisualizer = () => {
 
   const createVisualization = (graphData: Graph) => {
     const nodeIds = Object.keys(graphData);
-    const centerX = 400;
-    const centerY = 300;
-    const radius = 200;
+    const centerX = canvasSize.width / 2;
+    const centerY = canvasSize.height / 2;
+    const radius = Math.min(canvasSize.width, canvasSize.height) * 0.3;
     
     // Create nodes in circular layout
     const newNodes: Node[] = nodeIds.map((id, index) => {
@@ -737,24 +829,27 @@ const GraphVisualizer = () => {
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
             {/* Visualization Canvas */}
-            <div className="lg:col-span-2">
+            <div className="xl:col-span-2" ref={containerRef}>
               <div className="glass-container p-6 mb-6">
                 <canvas
                   ref={canvasRef}
-                  width={800}
-                  height={600}
-                  className="w-full h-auto bg-gray-900 rounded-lg"
+                  width={canvasSize.width}
+                  height={canvasSize.height}
+                  className="w-full h-auto bg-gray-900 rounded-lg cursor-pointer"
                 />
+                <p className="text-xs text-muted-foreground mt-2 text-center">
+                  Click/tap on nodes to set start position
+                </p>
               </div>
               
               {/* Control Buttons */}
-              <div className="flex gap-2 justify-center mb-4">
+              <div className="flex flex-col sm:flex-row gap-2 justify-center mb-4">
                 <Button 
                   onClick={startVisualization} 
                   disabled={isRunning || nodes.length === 0}
-                  className="btn-glass btn-primary"
+                  className="btn-glass btn-primary w-full sm:w-auto"
                 >
                   <Play className="w-4 h-4 mr-2" />
                   Start {algorithm.toUpperCase()}
@@ -763,7 +858,7 @@ const GraphVisualizer = () => {
                 <Button 
                   onClick={stopVisualization} 
                   disabled={!isRunning}
-                  className="btn-glass"
+                  className="btn-glass w-full sm:w-auto"
                   variant="destructive"
                 >
                   <Square className="w-4 h-4 mr-2" />

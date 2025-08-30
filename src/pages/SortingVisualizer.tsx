@@ -400,19 +400,19 @@ const insertionSort = async (arr: ArrayElement[]) => {
           </div>
 
           {/* Visualization Area */}
-          <div className="glass-container p-6 mb-6 min-h-[400px] flex items-end justify-center">
-            <div className="flex items-end gap-1 overflow-x-auto w-full justify-center">
+          <div className="glass-container p-4 sm:p-6 mb-6 min-h-[300px] sm:min-h-[400px] flex items-end justify-center overflow-hidden">
+            <div className="flex items-end gap-[1px] overflow-x-auto w-full justify-center px-2">
               {array.map((element, index) => (
                 <div
                   key={index}
-                  className={`transition-all duration-200 rounded-t ${getBarColor(element)} relative min-w-[8px] flex items-end justify-center`}
+                  className={`transition-all duration-200 rounded-t ${getBarColor(element)} relative min-w-[4px] flex items-end justify-center`}
                   style={{
-                    height: `${element.value}px`,
-                    width: `${Math.max(800 / array.length, 8)}px`
+                    height: `${Math.min(element.value, window.innerWidth < 768 ? 250 : 300)}px`,
+                    width: `${Math.max(Math.min(window.innerWidth - 100, 1000) / array.length, 4)}px`
                   }}
                 >
-                  {array.length <= 30 && (
-                    <span className="text-xs text-white font-bold mb-1">
+                  {array.length <= (window.innerWidth < 768 ? 15 : 30) && (
+                    <span className="text-[10px] sm:text-xs text-white font-bold mb-1">
                       {element.value}
                     </span>
                   )}
@@ -422,9 +422,9 @@ const insertionSort = async (arr: ArrayElement[]) => {
           </div>
 
           {/* Controls */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
             {/* Left Panel */}
-            <div className="glass-container p-6 space-y-4">
+            <div className="glass-container p-4 sm:p-6 space-y-4">
               <h3 className="text-lg font-semibold text-foreground mb-4">Settings</h3>
               
               <div>
@@ -470,7 +470,7 @@ const insertionSort = async (arr: ArrayElement[]) => {
             </div>
 
             {/* Right Panel */}
-            <div className="glass-container p-6 space-y-4">
+            <div className="glass-container p-4 sm:p-6 space-y-4">
               <h3 className="text-lg font-semibold text-foreground mb-4">Actions</h3>
               
               <div className="space-y-3">
@@ -496,7 +496,7 @@ const insertionSort = async (arr: ArrayElement[]) => {
                   </Button>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <Button 
                     onClick={startSorting} 
                     disabled={isRunning || array.length === 0}
