@@ -101,8 +101,9 @@
 
   /* Dropdown Fixes - Ensure proper background and z-index */
   [data-radix-select-content],
-  [data-radix-popper-content-wrapper] {
-    z-index: 50 !important;
+  [data-radix-popper-content-wrapper],
+  [data-radix-select-viewport] {
+    z-index: 100 !important;
   }
   
   [data-radix-select-content] {
@@ -111,16 +112,30 @@
     -webkit-backdrop-filter: var(--blur-backdrop) !important;
     border: 1px solid var(--glass-border) !important;
     box-shadow: var(--shadow-glass) !important;
+    border-radius: var(--radius-sm) !important;
   }
   
   [data-radix-select-item] {
     background: transparent !important;
     transition: var(--transition-smooth) !important;
+    color: hsl(var(--foreground)) !important;
   }
   
   [data-radix-select-item]:hover,
   [data-radix-select-item][data-highlighted] {
     background: var(--hover-glass) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+
+  /* Additional fixes for dropdown visibility */
+  .glass-container [data-radix-select-content] {
+    position: relative;
+    z-index: 100 !important;
+  }
+  
+  /* Ensure dropdowns appear above all other content */
+  [data-radix-select-portal] {
+    z-index: 100 !important;
   }
 
   /* Typography */
