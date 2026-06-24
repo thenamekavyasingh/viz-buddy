@@ -16,6 +16,8 @@ interface Node {
   current: boolean;
   inQueue: boolean;
   distance?: number;
+  finalized?: boolean;
+  inPriorityQueue?: boolean;
 }
 
 interface Edge {
@@ -23,6 +25,8 @@ interface Edge {
   to: string;
   weight?: number;
   highlighted: boolean;
+  isPathEdge?: boolean;
+  isNegativeCycle?: boolean;
 }
 
 interface Graph {
@@ -31,6 +35,7 @@ interface Graph {
 
 type Algorithm = 'bfs' | 'dfs' | 'dijkstra' | 'bellman-ford';
 type InputMode = 'adjacency-list' | 'adjacency-matrix' | 'random';
+type GraphDensity = 'sparse' | 'medium' | 'dense';
 
 const GraphVisualizer = () => {
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -47,6 +52,21 @@ const GraphVisualizer = () => {
   const [nodeCount, setNodeCount] = useState([6]);
   const [speed, setSpeed] = useState([5]);
   const [traversalOrder, setTraversalOrder] = useState<string[]>([]);
+  
+  // New States
+  const [graphDensity, setGraphDensity] = useState<GraphDensity>('medium');
+  const [forceConnected, setForceConnected] = useState(true);
+  const [queueState, setQueueState] = useState<string[]>([]);
+  const [stackState, setStackState] = useState<string[]>([]);
+  const [predecessors, setPredecessors] = useState<Record<string, string | null>>({});
+  const [distanceTable, setDistanceTable] = useState<Record<string, number>>({});
+  const [destinationNode, setDestinationNode] = useState<string>('');
+  const [finalPath, setFinalPath] = useState<string[]>([]);
+  const [pathCost, setPathCost] = useState<number | null>(null);
+  const [iterationCount, setIterationCount] = useState<number>(0);
+  const [negativeCycleEdges, setNegativeCycleEdges] = useState<[string, string][]>([]);
+  const [currentRelaxation, setCurrentRelaxation] = useState<{from: string, to: string, oldDist: number, newDist: number} | null>(null);
+
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -158,9 +178,23 @@ const GraphVisualizer = () => {
     setIsRunning(false);
     isRunningRef.current = false;
     // Reset all visual states
-    setNodes(prev => prev.map(node => ({ ...node, visited: false, current: false, inQueue: false })));
-    setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
+    setNodes(prev => prev.map(node => ({ 
+      ...node, visited: false, current: false, inQueue: false, finalized: false, inPriorityQueue: false 
+    })));
+    setEdges(prev => prev.map(edge => ({ 
+      ...edge, highlighted: false, isPathEdge: false, isNegativeCycle: false 
+    })));
     setTraversalOrder([]);
+    setQueueState([]);
+    setStackState([]);
+    setPredecessors({});
+    setDistanceTable({});
+    setDestinationNode('');
+    setFinalPath([]);
+    setPathCost(null);
+    setIterationCount(0);
+    setNegativeCycleEdges([]);
+    setCurrentRelaxation(null);
   };
 
   const parseAdjacencyList = (input: string): Graph => {
@@ -234,50 +268,60 @@ const GraphVisualizer = () => {
       // For acyclic directed graphs (DAG), only allow edges from lower to higher index
       for (let i = 0; i < nodeLabels.length; i++) {
         const from = nodeLabels[i];
-        // Connect to a few random higher-index nodes
         const possibleTargets = nodeLabels.slice(i + 1);
-        const connectionCount = Math.min(Math.floor(Math.random() * 3) + 1, possibleTargets.length);
         
-        for (let j = 0; j < connectionCount; j++) {
-          if (possibleTargets.length > 0) {
-            const randomIndex = Math.floor(Math.random() * possibleTargets.length);
-            const to = possibleTargets.splice(randomIndex, 1)[0];
-            const weight = isWeighted ? Math.floor(Math.random() * 10) + 1 : 1;
-            graph[from][to] = weight;
+        // Probability based on density
+        let prob = 0.5;
+        if (graphDensity === 'sparse') prob = 2 / count;
+        if (graphDensity === 'medium') prob = 4 / count;
+        if (graphDensity === 'dense') prob = 0.7;
+
+        for (const to of possibleTargets) {
+          if (Math.random() < prob) {
+             const weight = isWeighted ? Math.floor(Math.random() * 10) + 1 : 1;
+             graph[from][to] = weight;
           }
         }
       }
     } else {
-      // For cyclic graphs or undirected graphs, use the original algorithm
-      // First, create a connected graph by connecting each node to the next (ensuring connectivity)
-      for (let i = 0; i < nodeLabels.length; i++) {
-        const from = nodeLabels[i];
-        const to = nodeLabels[(i + 1) % nodeLabels.length];
-        const weight = isWeighted ? Math.floor(Math.random() * 5) + 1 : 1;
+      // Normal random graph
+      if (forceConnected && count > 1) {
+        // Build a random spanning tree first to ensure connectivity
+        const unvisited = [...nodeLabels];
+        const visited = [unvisited.splice(Math.floor(Math.random() * unvisited.length), 1)[0]];
         
-        graph[from][to] = weight;
-        if (!isDirected) {
-          graph[to][from] = weight;
-        }
-      }
-      
-      // Add additional random edges for complexity
-      const maxAdditionalEdges = Math.floor(count * (count - 1) / 4); // 25% of possible edges
-      const additionalEdges = Math.floor(Math.random() * maxAdditionalEdges) + count;
-      
-      for (let i = 0; i < additionalEdges; i++) {
-        const from = nodeLabels[Math.floor(Math.random() * nodeLabels.length)];
-        const availableTargets = nodeLabels.filter(to => 
-          to !== from && !graph[from][to] // Don't create duplicate edges
-        );
-        
-        if (availableTargets.length > 0) {
-          const to = availableTargets[Math.floor(Math.random() * availableTargets.length)];
-          const weight = isWeighted ? Math.floor(Math.random() * 10) + 1 : 1;
+        while (unvisited.length > 0) {
+          const from = visited[Math.floor(Math.random() * visited.length)];
+          const toIndex = Math.floor(Math.random() * unvisited.length);
+          const to = unvisited.splice(toIndex, 1)[0];
           
+          const weight = isWeighted ? Math.floor(Math.random() * 10) + 1 : 1;
           graph[from][to] = weight;
           if (!isDirected) {
             graph[to][from] = weight;
+          }
+          visited.push(to);
+        }
+      }
+
+      // Add random edges based on density
+      let prob = 0.5;
+      if (graphDensity === 'sparse') prob = 1.5 / count;
+      if (graphDensity === 'medium') prob = 3 / count;
+      if (graphDensity === 'dense') prob = 0.6;
+
+      for (let i = 0; i < nodeLabels.length; i++) {
+        for (let j = 0; j < nodeLabels.length; j++) {
+          if (i === j) continue;
+          const from = nodeLabels[i];
+          const to = nodeLabels[j];
+          
+          if (!graph[from][to] && Math.random() < prob) {
+            const weight = isWeighted ? Math.floor(Math.random() * 10) + 1 : 1;
+            graph[from][to] = weight;
+            if (!isDirected) {
+              graph[to][from] = weight;
+            }
           }
         }
       }
@@ -361,6 +405,7 @@ const GraphVisualizer = () => {
     console.log("Current graph:", graph);
     
     const queue: string[] = [startNodeId];
+    setQueueState([...queue]);
     const visited = new Set<string>();
     const order: string[] = [];
     
@@ -368,6 +413,7 @@ const GraphVisualizer = () => {
       console.log("BFS loop, queue:", queue, "visited:", Array.from(visited));
       
       const current = queue.shift()!;
+      setQueueState([...queue]);
       
       if (visited.has(current)) continue;
       
@@ -394,6 +440,7 @@ const GraphVisualizer = () => {
         for (const neighbor of Object.keys(graph[current])) {
           if (!visited.has(neighbor) && !queue.includes(neighbor)) {
             queue.push(neighbor);
+            setQueueState([...queue]);
             console.log("Added to queue:", neighbor);
             
             // Mark as in queue
@@ -430,7 +477,7 @@ const GraphVisualizer = () => {
   };
 
   // DFS Algorithm
-  const dfs = async (current: string, visited: Set<string>, order: string[]) => {
+  const dfs = async (current: string, visited: Set<string>, order: string[], currentStack: string[]) => {
     console.log("DFS visiting:", current, "visited so far:", Array.from(visited));
     console.log("Current isRunning:", isRunning);
     
@@ -441,6 +488,8 @@ const GraphVisualizer = () => {
     
     visited.add(current);
     order.push(current);
+    currentStack.push(current);
+    setStackState([...currentStack]);
     
     console.log("Added to order:", current, "new order:", [...order]);
     
@@ -471,7 +520,7 @@ const GraphVisualizer = () => {
           })));
           
           await sleep();
-          await dfs(neighbor, visited, order);
+          await dfs(neighbor, visited, order, currentStack);
           
           // Clear edge highlighting after recursion
           setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
@@ -479,6 +528,9 @@ const GraphVisualizer = () => {
       }
     }
     
+    currentStack.pop();
+    setStackState([...currentStack]);
+
     // Unmark current
     setNodes(prev => prev.map(node => ({
       ...node,
@@ -491,6 +543,7 @@ const GraphVisualizer = () => {
   // Dijkstra's Algorithm
   const dijkstra = async (startNodeId: string) => {
     const distances: { [key: string]: number } = {};
+    const preds: Record<string, string | null> = {};
     const visited = new Set<string>();
     const unvisited = new Set<string>();
     const order: string[] = [];
@@ -498,8 +551,12 @@ const GraphVisualizer = () => {
     // Initialize distances
     Object.keys(graph).forEach(nodeId => {
       distances[nodeId] = nodeId === startNodeId ? 0 : Infinity;
+      preds[nodeId] = null;
       unvisited.add(nodeId);
     });
+    
+    setDistanceTable({...distances});
+    setPredecessors({...preds});
     
     while (unvisited.size > 0 && isRunningRef.current) {
       if (!isRunningRef.current) return;
@@ -528,7 +585,9 @@ const GraphVisualizer = () => {
         ...node,
         current: node.id === current,
         visited: visited.has(node.id),
-        distance: distances[node.id] === Infinity ? undefined : distances[node.id]
+        distance: distances[node.id] === Infinity ? undefined : distances[node.id],
+        inPriorityQueue: unvisited.has(node.id) && distances[node.id] !== Infinity,
+        finalized: visited.has(node.id)
       })));
       
       await sleep();
@@ -537,11 +596,18 @@ const GraphVisualizer = () => {
       if (graph[current]) {
         for (const neighbor of Object.keys(graph[current])) {
           if (!visited.has(neighbor)) {
+            const oldDist = distances[neighbor];
             const newDistance = distances[current] + graph[current][neighbor];
             
+            setCurrentRelaxation({from: current, to: neighbor, oldDist, newDist: newDistance});
+
             if (newDistance < distances[neighbor]) {
               distances[neighbor] = newDistance;
+              preds[neighbor] = current;
               
+              setDistanceTable({...distances});
+              setPredecessors({...preds});
+
               // Highlight edge
               setEdges(prev => prev.map(edge => ({
                 ...edge,
@@ -552,11 +618,22 @@ const GraphVisualizer = () => {
               // Update distances display
               setNodes(prev => prev.map(node => ({
                 ...node,
-                distance: distances[node.id] === Infinity ? undefined : distances[node.id]
+                distance: distances[node.id] === Infinity ? undefined : distances[node.id],
+                inPriorityQueue: unvisited.has(node.id) && distances[node.id] !== Infinity,
+                finalized: visited.has(node.id)
               })));
               
               await sleep();
+            } else {
+              // Highlight evaluated edge
+              setEdges(prev => prev.map(edge => ({
+                ...edge,
+                highlighted: (edge.from === current && edge.to === neighbor) ||
+                            (!isDirected && edge.from === neighbor && edge.to === current)
+              })));
+              await sleep();
             }
+            setCurrentRelaxation(null);
           }
         }
       }
@@ -565,7 +642,9 @@ const GraphVisualizer = () => {
       setNodes(prev => prev.map(node => ({
         ...node,
         current: false,
-        distance: distances[node.id] === Infinity ? undefined : distances[node.id]
+        distance: distances[node.id] === Infinity ? undefined : distances[node.id],
+        inPriorityQueue: unvisited.has(node.id) && distances[node.id] !== Infinity,
+        finalized: visited.has(node.id)
       })));
       setEdges(prev => prev.map(edge => ({ ...edge, highlighted: false })));
     }
@@ -574,14 +653,21 @@ const GraphVisualizer = () => {
   // Bellman-Ford Algorithm
   const bellmanFord = async (startNodeId: string) => {
     const distances: { [key: string]: number } = {};
+    const preds: Record<string, string | null> = {};
     const nodeIds = Object.keys(graph);
     const order: string[] = [];
     
     // Initialize distances
     nodeIds.forEach(nodeId => {
       distances[nodeId] = nodeId === startNodeId ? 0 : Infinity;
+      preds[nodeId] = null;
     });
     
+    setDistanceTable({...distances});
+    setPredecessors({...preds});
+    setIterationCount(0);
+    setNegativeCycleEdges([]);
+
     // Update distances for all nodes
     setNodes(prev => prev.map(node => ({
       ...node,
@@ -591,6 +677,7 @@ const GraphVisualizer = () => {
     // Relax edges V-1 times
     for (let i = 0; i < nodeIds.length - 1 && isRunningRef.current; i++) {
       let hasUpdate = false;
+      setIterationCount(i + 1);
       
       for (const from of nodeIds) {
         if (!isRunningRef.current) return;
@@ -613,12 +700,19 @@ const GraphVisualizer = () => {
         if (graph[from] && distances[from] !== Infinity) {
           for (const to of Object.keys(graph[from])) {
             const weight = graph[from][to];
+            const oldDist = distances[to];
             const newDistance = distances[from] + weight;
             
+            setCurrentRelaxation({from, to, oldDist, newDist: newDistance});
+
             if (newDistance < distances[to]) {
               distances[to] = newDistance;
+              preds[to] = from;
               hasUpdate = true;
               
+              setDistanceTable({...distances});
+              setPredecessors({...preds});
+
               // Highlight edge
               setEdges(prev => prev.map(edge => ({
                 ...edge,
@@ -634,7 +728,16 @@ const GraphVisualizer = () => {
               })));
               
               await sleep();
+            } else {
+              // Show evaluation briefly
+              setEdges(prev => prev.map(edge => ({
+                ...edge,
+                highlighted: (edge.from === from && edge.to === to) ||
+                            (!isDirected && edge.from === to && edge.to === from)
+              })));
+              await sleep();
             }
+            setCurrentRelaxation(null);
           }
         }
         
@@ -651,20 +754,33 @@ const GraphVisualizer = () => {
     }
     
     // Check for negative cycles
+    if (!isRunningRef.current) return;
+    setIterationCount(nodeIds.length); // final check iteration
+    
+    const cycleEdges: [string, string][] = [];
     for (const from of nodeIds) {
-      if (!isRunningRef.current) return;
-      
       if (graph[from] && distances[from] !== Infinity) {
         for (const to of Object.keys(graph[from])) {
           const weight = graph[from][to];
           const newDistance = distances[from] + weight;
           
           if (newDistance < distances[to]) {
-            toast.error("Negative cycle detected!");
-            return;
+            cycleEdges.push([from, to]);
           }
         }
       }
+    }
+    
+    if (cycleEdges.length > 0) {
+      setNegativeCycleEdges(cycleEdges);
+      setEdges(prev => prev.map(edge => ({
+        ...edge,
+        isNegativeCycle: cycleEdges.some(([f, t]) => 
+          (edge.from === f && edge.to === t) || (!isDirected && edge.from === t && edge.to === f)
+        )
+      })));
+      toast.error("Negative cycle detected!");
+      return;
     }
   };
 
@@ -723,6 +839,53 @@ const GraphVisualizer = () => {
     }
   };
 
+  // Path Reconstruction
+  useEffect(() => {
+    if (!destinationNode || (!predecessors[destinationNode] && startNode !== destinationNode)) {
+      setFinalPath([]);
+      setPathCost(null);
+      setEdges(prev => prev.map(e => ({ ...e, isPathEdge: false })));
+      return;
+    }
+
+    const path: string[] = [];
+    let current: string | null = destinationNode;
+    
+    // Cycle detection during path reconstruction (safety)
+    const seen = new Set<string>();
+    
+    while (current !== null) {
+      if (seen.has(current)) break;
+      seen.add(current);
+      path.unshift(current);
+      if (current === startNode) break;
+      current = predecessors[current];
+    }
+    
+    if (path[0] === startNode) {
+      setFinalPath(path);
+      setPathCost(distanceTable[destinationNode] ?? null);
+      
+      // Highlight path edges
+      setEdges(prev => prev.map(edge => {
+        let isPath = false;
+        for (let i = 0; i < path.length - 1; i++) {
+          const pFrom = path[i];
+          const pTo = path[i+1];
+          if ((edge.from === pFrom && edge.to === pTo) || (!isDirected && edge.from === pTo && edge.to === pFrom)) {
+            isPath = true;
+            break;
+          }
+        }
+        return { ...edge, isPathEdge: isPath };
+      }));
+    } else {
+      setFinalPath([]);
+      setPathCost(null);
+      setEdges(prev => prev.map(e => ({ ...e, isPathEdge: false })));
+    }
+  }, [destinationNode, predecessors, startNode, distanceTable, isDirected]);
+
   // Canvas drawing
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -740,8 +903,17 @@ const GraphVisualizer = () => {
       const toNode = nodes.find(n => n.id === edge.to);
       
       if (fromNode && toNode) {
-        ctx.strokeStyle = edge.highlighted ? '#ec4899' : '#64748b';
-        ctx.lineWidth = edge.highlighted ? 3 : 2;
+        if (edge.isNegativeCycle) {
+          ctx.strokeStyle = '#ef4444'; // red for negative cycle
+          ctx.lineWidth = 4;
+        } else if (edge.isPathEdge) {
+          ctx.strokeStyle = '#eab308'; // yellow for path
+          ctx.lineWidth = 4;
+        } else {
+          ctx.strokeStyle = edge.highlighted ? '#ec4899' : '#64748b';
+          ctx.lineWidth = edge.highlighted ? 3 : 2;
+        }
+        
         ctx.beginPath();
         ctx.moveTo(fromNode.x, fromNode.y);
         ctx.lineTo(toNode.x, toNode.y);
@@ -780,6 +952,8 @@ const GraphVisualizer = () => {
     nodes.forEach(node => {
       let fillColor = '#3b82f6'; // default blue
       if (node.current) fillColor = '#ec4899'; // pink for current
+      else if (node.finalized) fillColor = '#8b5cf6'; // purple for finalized
+      else if (node.inPriorityQueue) fillColor = '#06b6d4'; // cyan for in priority queue
       else if (node.visited) fillColor = '#10b981'; // green for visited
       else if (node.inQueue) fillColor = '#f59e0b'; // yellow for in queue
       
@@ -873,6 +1047,42 @@ const GraphVisualizer = () => {
                   {traversalOrder.length > 0 ? traversalOrder.join(' → ') : 'No traversal yet'}
                 </div>
               </div>
+
+              {/* Algorithm State */}
+              <div className="glass-container p-4 mt-4">
+                <h4 className="text-sm font-medium mb-2">Algorithm State:</h4>
+                <div className="text-xs space-y-2">
+                  {algorithm === 'bfs' && (
+                    <div><strong>Queue:</strong> [ {queueState.join(', ')} ]</div>
+                  )}
+                  {algorithm === 'dfs' && (
+                    <div><strong>Stack:</strong> [ {stackState.join(', ')} ]</div>
+                  )}
+                  {(algorithm === 'dijkstra' || algorithm === 'bellman-ford') && (
+                    <>
+                      {currentRelaxation && (
+                        <div className="text-accent-pink">
+                          <strong>Evaluating Edge:</strong> {currentRelaxation.from} → {currentRelaxation.to} 
+                          (Dist: {currentRelaxation.oldDist === Infinity ? '∞' : currentRelaxation.oldDist} vs {currentRelaxation.newDist})
+                        </div>
+                      )}
+                      {algorithm === 'bellman-ford' && (
+                        <div><strong>Iteration:</strong> {iterationCount}</div>
+                      )}
+                      {destinationNode && finalPath.length > 0 && (
+                        <div className="text-yellow-500 font-bold">
+                          <strong>Shortest Path:</strong> {finalPath.join(' → ')} (Cost: {pathCost})
+                        </div>
+                      )}
+                      {destinationNode && finalPath.length === 0 && !isRunning && Object.keys(graph).length > 0 && (
+                        <div className="text-red-500 font-bold">
+                          No path exists from {startNode} to {destinationNode}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Control Panel */}
@@ -948,6 +1158,36 @@ const GraphVisualizer = () => {
                     </label>
                   </div>
 
+                  {inputMode === 'random' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Graph Density</label>
+                        <Select value={graphDensity} onValueChange={(value: GraphDensity) => setGraphDensity(value)} disabled={isRunning}>
+                          <SelectTrigger className="input-glass">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="sparse">Sparse</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="dense">Dense</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={forceConnected}
+                            onChange={(e) => setForceConnected(e.target.checked)}
+                            disabled={isRunning}
+                            className="rounded"
+                          />
+                          <span className="text-sm">Force Connected</span>
+                        </label>
+                      </div>
+                    </>
+                  )}
+
                   <div>
                     <label className="block text-sm font-medium mb-2">Nodes: {nodeCount[0]}</label>
                     <Slider
@@ -974,18 +1214,36 @@ const GraphVisualizer = () => {
                   </div>
 
                   {nodes.length > 0 && (
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Start Node</label>
-                      <Select value={startNode} onValueChange={setStartNode} disabled={isRunning}>
-                        <SelectTrigger className="input-glass">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.keys(graph).map(nodeId => (
-                            <SelectItem key={nodeId} value={nodeId}>{nodeId}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Start Node</label>
+                        <Select value={startNode} onValueChange={setStartNode} disabled={isRunning}>
+                          <SelectTrigger className="input-glass">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.keys(graph).map(nodeId => (
+                              <SelectItem key={nodeId} value={nodeId}>{nodeId}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {(algorithm === 'dijkstra' || algorithm === 'bellman-ford') && (
+                        <div>
+                          <label className="block text-sm font-medium mb-2">Destination Node (Optional)</label>
+                          <Select value={destinationNode} onValueChange={(v) => setDestinationNode(v === 'none' ? '' : v)} disabled={isRunning}>
+                            <SelectTrigger className="input-glass">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {Object.keys(graph).map(nodeId => (
+                                <SelectItem key={nodeId} value={nodeId}>{nodeId}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1083,8 +1341,26 @@ const GraphVisualizer = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-4 bg-yellow-500 rounded-full"></div>
-                      <span>In Queue</span>
+                      <span>In Queue / Path Edge</span>
                     </div>
+                    {(algorithm === 'dijkstra' || algorithm === 'bellman-ford') && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 bg-[#8b5cf6] rounded-full"></div>
+                          <span>Finalized</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 bg-[#06b6d4] rounded-full"></div>
+                          <span>In Priority Queue</span>
+                        </div>
+                      </>
+                    )}
+                    {algorithm === 'bellman-ford' && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 bg-red-500 rounded-full"></div>
+                        <span>Negative Cycle</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
